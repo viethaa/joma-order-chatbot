@@ -30,13 +30,13 @@ Agentic AI order assistant for Joma CIS Cafe at Concordia International School, 
 │   ├── chat.js          # Vercel serverless — proxies OpenAI API
 │   └── order.js         # Vercel serverless — proxies iPos order submission
 ├── src/
-│   ├── App.jsx          # Main app — state machine + AI handler
+│   ├── App.jsx          # Main app 
 │   ├── aiService.js     # GPT-4o-mini with tool use (add_to_cart)
 │   ├── orderService.js  # iPos order placement (token auth, MD5 signature)
 │   ├── menuData.js      # Menu items with iPos IDs mapped for ordering
-│   ├── config.js        # Constants, state definitions, formatter
+│   ├── config.js        
 │   └── styles/
-│       └── global.css   # Dark terminal/gold theme
+│       └── global.css   
 ```
 
 ## Getting Started
