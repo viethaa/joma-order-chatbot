@@ -10,11 +10,12 @@ Agentic AI order assistant for Joma CIS Cafe at Concordia International School, 
 
 ## What it does
 
-- Chat naturally — "2 thai milk teas and a croissant" just works
+- Chat naturally — "Thai milk teas and a croissant" just works
 - AI understands context, handles vague requests, and declines items not on the menu
 - On checkout, the agent places a real pickup order on the Joma iPos system
-- You get an order code — pay cash at the counter when you pick up
-
+- You get an order code
+- Pays with your student ID
+  
 ## Tech Stack
 
 - **React 18 + Vite**
