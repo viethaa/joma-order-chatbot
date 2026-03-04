@@ -82,10 +82,6 @@ export default function JomaChatBot() {
 
   /* ─── AI handler — Claude with full conversation history ─── */
   const handleAI = async (userText) => {
-    if (!isOpen) {
-      addBot("We're closed right now! Joma CIS Cafe is open 7am – 4pm (Vietnam time). See you then ☕");
-      return;
-    }
     setLoading(true);
 
     const cartCtx = cart.length > 0
@@ -130,6 +126,11 @@ export default function JomaChatBot() {
   /* ─── State machine ─── */
   const handleSend = (text) => {
     if (!text.trim() || loading) return;
+    if (!isOpen) {
+      addUser(text.trim());
+      addBot("We're closed right now! Come back between 7am – 4pm (Vietnam time) ☕");
+      return;
+    }
     const t = text.trim();
     addUser(t);
     setInput('');
