@@ -121,9 +121,41 @@ input::placeholder { color: var(--text-dim); }
   animation: pulse 2.5s ease-in-out infinite;
 }
 
+.status-dot.offline {
+  background: rgba(203, 191, 166, 0.3);
+  box-shadow: none;
+  animation: none;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+/* ─── Header right group ─── */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.github-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.github-btn:hover {
+  color: var(--gold);
+  border-color: var(--border-hi);
+  background: var(--gold-glow);
 }
 
 /* ─── Cart pill ─── */

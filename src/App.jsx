@@ -82,6 +82,10 @@ export default function JomaChatBot() {
 
   /* ─── AI handler — Claude with full conversation history ─── */
   const handleAI = async (userText) => {
+    if (!isOpen) {
+      addBot("We're closed right now! Joma CIS Cafe is open 7am – 4pm (Vietnam time). See you then ☕");
+      return;
+    }
     setLoading(true);
 
     const cartCtx = cart.length > 0
@@ -301,6 +305,13 @@ export default function JomaChatBot() {
 
   const totalItems = cart.reduce((s, c) => s + c.qty, 0);
 
+  /* ─── Open hours: 7am–4pm Vietnam time (UTC+7) ─── */
+  const isOpen = (() => {
+    const now = new Date();
+    const vnHour = (now.getUTCHours() + 7) % 24;
+    return vnHour >= 7 && vnHour < 16;
+  })();
+
   /* ─── Render ─── */
   return (
     <div className="app">
@@ -312,27 +323,40 @@ export default function JomaChatBot() {
             <div className="brand-text">
               <span className="brand-name">JOMA CIS CAFE</span>
               <span className="brand-sub">
-                <span className="status-dot" />
-                AI ORDER ASSISTANT
+                <span className={isOpen ? 'status-dot' : 'status-dot offline'} />
+                {isOpen ? 'Online' : 'Offline'}
               </span>
             </div>
           </div>
 
-          {cart.length > 0 && (
-            <div className="cart-pill">
-              <span className="cart-count">
-                {totalItems} item{totalItems !== 1 ? 's' : ''}
-              </span>
-              <span className="cart-sep">·</span>
-              <span className="cart-total">{fmt(cartTotal)}</span>
-              <button
-                className="cart-checkout-btn"
-                onClick={() => handleSend('done')}
-              >
-                Checkout →
-              </button>
-            </div>
-          )}
+          <div className="header-right">
+            {cart.length > 0 && (
+              <div className="cart-pill">
+                <span className="cart-count">
+                  {totalItems} item{totalItems !== 1 ? 's' : ''}
+                </span>
+                <span className="cart-sep">·</span>
+                <span className="cart-total">{fmt(cartTotal)}</span>
+                <button
+                  className="cart-checkout-btn"
+                  onClick={() => handleSend('done')}
+                >
+                  Checkout →
+                </button>
+              </div>
+            )}
+            <a
+              href="https://github.com/viethaa/joma-order-chatbot"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="github-btn"
+              title="View on GitHub"
+            >
+              <svg height="16" viewBox="0 0 16 16" width="16" fill="currentColor">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+              </svg>
+            </a>
+          </div>
         </div>
       </header>
 
