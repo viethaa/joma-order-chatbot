@@ -6,25 +6,6 @@ An AI-powered ordering chatbot for **Joma CIS Cafe** at Concordia International 
 ![React](https://img.shields.io/badge/React-18-61dafb?style=flat&logo=react)
 ![OpenAI](https://img.shields.io/badge/AI-GPT--4o--mini-412991?style=flat&logo=openai)
 
-## Features
-
-- **Numbered menu navigation** — Type 1-8 to browse categories, then pick items by number
-- **AI-powered fallback** — Ask anything in natural language ("what's good for lunch?")
-- **Cart management** — Track items, quantities, and running total
-- **Checkout flow** — Pickup time → Student ID → Confirm → Link to official iPos site
-- **Quick-tap buttons** — Common actions available as tappable buttons
-- **Dark terminal aesthetic** — Gold/brown color scheme with JetBrains Mono font
-
-## Menu Categories
-
-1. 🍳 Breakfast
-2. 🥪 Sandwiches
-3. 🥗 Soups & Salads
-4. ☕ Coffee
-5. 🧊 Cold Drinks
-6. 🥤 Smoothies
-7. 🍵 Teas & Other
-8. 🥐 Baked Goods & Cakes
 
 ## Project Structure
 
