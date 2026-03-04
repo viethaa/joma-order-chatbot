@@ -1,102 +1,93 @@
-# Joma CIS Cafe — Order Chatbot 🍳☕
+# Joma CIS Cafe — Order Chatbot
 
-An AI-powered ordering chatbot for **Joma CIS Cafe** at Concordia International School, Hanoi.
+Agentic AI order assistant for Joma CIS Cafe at Concordia International School, Hanoi. Chat naturally to order and the agent automatically places your pickup order on the live iPos system.
 
-![Dark terminal UI](https://img.shields.io/badge/UI-Dark_Terminal-1a1208?style=flat&labelColor=d4aa64)
 ![React](https://img.shields.io/badge/React-18-61dafb?style=flat&logo=react)
-![OpenAI](https://img.shields.io/badge/AI-GPT--4o--mini-412991?style=flat&logo=openai)
+![OpenAI](https://img.shields.io/badge/GPT--4o--mini-412991?style=flat&logo=openai)
+![Vercel](https://img.shields.io/badge/Vercel-ready-000000?style=flat&logo=vercel)
 
+---
+
+## What it does
+
+- Chat naturally — "2 thai milk teas and a croissant" just works
+- AI understands context, handles vague requests, and declines items not on the menu
+- On checkout, the agent places a real pickup order on the Joma iPos system
+- You get an order code — pay cash at the counter when you pick up
+
+## Tech Stack
+
+- **React 18 + Vite**
+- **GPT-4o-mini** with tool calling for natural language → cart actions
+- **iPos API** — reverse-engineered order submission with MD5 signature auth
+- **Vercel** — serverless functions for API proxying in production
 
 ## Project Structure
 
 ```
-joma-order-chatbot/
-├── index.html                 # Entry point
-├── package.json               # Dependencies & scripts
-├── vite.config.js             # Vite build config
+├── api/
+│   ├── chat.js          # Vercel serverless — proxies OpenAI API
+│   └── order.js         # Vercel serverless — proxies iPos order submission
 ├── src/
-│   ├── main.jsx               # React DOM mount
-│   ├── App.jsx                # Main chatbot component (state machine)
-│   ├── config.js              # API keys, constants, state definitions
-│   ├── menuData.js            # Menu categories & items with prices
-│   ├── aiService.js           # OpenAI GPT-4o-mini integration
-│   ├── components/
-│   │   ├── FoodCard.jsx       # Food item image card
-│   │   └── QuickBtn.jsx       # Quick action button
+│   ├── App.jsx          # Main app — state machine + AI handler
+│   ├── aiService.js     # GPT-4o-mini with tool use (add_to_cart)
+│   ├── orderService.js  # iPos order placement (token auth, MD5 signature)
+│   ├── menuData.js      # Menu items with iPos IDs mapped for ordering
+│   ├── config.js        # Constants, state definitions, formatter
 │   └── styles/
-│       └── global.css         # All styles
-└── README.md
+│       └── global.css   # Dark terminal/gold theme
 ```
 
 ## Getting Started
 
 ### Prerequisites
 - Node.js 18+
-- An OpenAI API key (already configured in `src/config.js`)
+- OpenAI API key
 
-### Install & Run
+### Setup
 
 ```bash
-# Clone the repo
-git clone https://github.com/YOUR_USERNAME/joma-order-chatbot.git
+git clone https://github.com/viethaa/joma-order-chatbot.git
 cd joma-order-chatbot
-
-# Install dependencies
 npm install
+```
 
-# Start dev server
+Create a `.env` file in the root:
+
+```
+VITE_OPENAI_API_KEY=your-openai-key-here
+VITE_TEST_MODE=false
+```
+
+```bash
 npm run dev
 ```
 
-Open `http://localhost:3000` in your browser.
+Open `http://localhost:3000`.
 
-### Build for Production
+### Test Mode
+
+Set `VITE_TEST_MODE=true` in `.env` to run through the full ordering flow without placing a real order. You will get a fake order code instead.
+
+### Production (Vercel)
 
 ```bash
 npm run build
 ```
 
-Output goes to `dist/` — deploy to Netlify, Vercel, or any static host.
-
-## Configuration
-
-Edit `src/config.js` to update:
-
-- **`OPENAI_API_KEY`** — Your OpenAI API key
-- **`OPENAI_MODEL`** — Model to use (default: `gpt-4o-mini`)
-- **`IPOS_URL`** — Link to the official Joma ordering page
+Deploy to Vercel and set `OPENAI_API_KEY` as an environment variable in the Vercel dashboard. The serverless functions in `api/` handle all API calls server-side.
 
 ## How It Works
 
-The chatbot uses a **state machine** with these states:
+The app uses a state machine for the checkout flow and routes all natural language to GPT-4o-mini via tool calling.
 
 | State | Description |
 |-------|-------------|
-| `MAIN` | Show categories, accept number or natural language |
-| `CAT` | Show items in selected category |
-| `AFTER_ADD` | Item added — add more, browse, or checkout |
+| `MAIN` | Free chat — orders, questions, browsing |
+| `CAT` | Numbered category browsing |
 | `TIME` | Enter pickup time |
-| `ID` | Enter student ID |
-| `CONFIRM` | Review and confirm order |
-| `DONE` | Order placed, link to official site |
+| `ID` | Enter name / student ID |
+| `CONFIRM` | Review order summary |
+| `DONE` | Order placed on iPos |
 
-**Numbered inputs** are handled instantly (no API call). **Natural language** queries fall back to OpenAI GPT-4o-mini for smart responses.
-
-## Menu Data
-
-Menu items are sourced from Joma CIS Cafe. To update:
-
-1. Edit `src/menuData.js`
-2. Add/remove items, update prices
-3. Optional: Add Wix CDN image URLs for food photos
-
-## Tech Stack
-
-- **React 18** — UI components with hooks
-- **Vite** — Fast build tool
-- **OpenAI API** — GPT-4o-mini for natural language understanding
-- **CSS** — Custom dark theme with glassmorphism
-
-## License
-
-MIT
+When the user confirms, `orderService.js` gets an anonymous iPos token, computes an MD5 signature over the order total, and submits the order directly to the iPos API. The order appears on the cafe's POS with `WAIT_CONFIRM` status.
