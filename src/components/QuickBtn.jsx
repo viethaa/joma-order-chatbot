@@ -1,12 +1,6 @@
-import React from 'react';
-
-/**
- * A quick-action button shown below the chat.
- * Used for common actions like "Checkout", "Add more", etc.
- */
-export default function QuickBtn({ label, onClick }) {
+export default function QuickBtn({ label, onClick, primary }) {
   return (
-    <button className="quick-btn" onClick={onClick}>
+    <button className={`quick-btn${primary ? ' primary' : ''}`} onClick={onClick}>
       {label}
     </button>
   );

@@ -1,11 +1,27 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { STATES as S, fmt, IPOS_URL } from './config';
+import { STATES as S, fmt } from './config';
 import CATEGORIES from './menuData';
-import { askAI } from './aiService';
-import FoodCard from './components/FoodCard';
+import { chat, resetHistory } from './aiService';
+import { placeOrder } from './orderService';
 import QuickBtn from './components/QuickBtn';
 
-/* ─── Main Chatbot App ─── */
+/* ─── Find a menu item by exact or fuzzy name ─── */
+const ALL_ITEMS = CATEGORIES.flatMap((c) => c.items);
+
+function findMenuItem(name) {
+  const q = name.toLowerCase().trim();
+  return (
+    ALL_ITEMS.find((i) => i.name.toLowerCase() === q) ||
+    ALL_ITEMS.find((i) => i.name.toLowerCase().includes(q)) ||
+    ALL_ITEMS.find((i) => {
+      const words = q.split(/\s+/).filter((w) => w.length > 3);
+      return words.length > 0 && words.some((w) => i.name.toLowerCase().includes(w));
+    }) ||
+    null
+  );
+}
+
+/* ─── Main App ─── */
 export default function JomaChatBot() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -20,202 +36,239 @@ export default function JomaChatBot() {
   const initialized = useRef(false);
 
   const scrollDown = () =>
-    setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
 
-  const addBot = useCallback((content, extra = {}) => {
-    setMessages((p) => [...p, { role: 'bot', content, ...extra }]);
+  const addMsg = useCallback((role, content, extra = {}) => {
+    setMessages((p) => [...p, { role, content, ...extra }]);
     scrollDown();
   }, []);
 
-  const addUser = useCallback((text) => {
-    setMessages((p) => [...p, { role: 'user', content: text }]);
-    scrollDown();
-  }, []);
+  const addBot = useCallback(
+    (content, extra = {}) => addMsg('bot', content, extra),
+    [addMsg]
+  );
+  const addUser = useCallback((text) => addMsg('user', text), [addMsg]);
 
-  /* ─── Welcome Message ─── */
+  /* ─── Welcome ─── */
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
     setTimeout(() => {
       addBot(
-        `👋 Welcome to Joma CIS Cafe!\nLet's get your order started.\n\nPick a category:\n\n${CATEGORIES.map((c, i) => `  ${i + 1}. ${c.icon} ${c.name}`).join('\n')}\n\nType a number, or just tell me what you want!`
+        `Hey! Welcome to Joma CIS Cafe 👋\n\nJust tell me what you want — like "2 thai milk teas and a croissant" — and I'll sort it out.\n\nOr browse by category:\n\n${CATEGORIES.map((c, i) => `  [${i + 1}] ${c.icon} ${c.name}`).join('\n')}`
       );
     }, 300);
   }, [addBot]);
 
-  /* ─── Cart Helpers ─── */
+  /* ─── Cart helpers ─── */
   const cartTotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
   const cartSummary = cart
-    .map((c) => `  • ${c.name} ×${c.qty} — ${fmt(c.price * c.qty)}`)
+    .map((c) => `  ${c.name} ×${c.qty} — ${fmt(c.price * c.qty)}`)
     .join('\n');
-
   const categoryList = CATEGORIES.map(
-    (c, i) => `  ${i + 1}. ${c.icon} ${c.name}`
+    (c, i) => `  [${i + 1}] ${c.icon} ${c.name}`
   ).join('\n');
 
-  /* ─── AI Fallback ─── */
+  const addToCart = useCallback((item, qty = 1) => {
+    setCart((prev) => {
+      const existing = prev.find((c) => c.name === item.name);
+      if (existing)
+        return prev.map((c) =>
+          c.name === item.name ? { ...c, qty: c.qty + qty } : c
+        );
+      return [...prev, { ...item, qty }];
+    });
+  }, []);
+
+  /* ─── AI handler — Claude with full conversation history ─── */
   const handleAI = async (userText) => {
     setLoading(true);
-    const reply = await askAI(userText);
-    addBot(reply);
+
+    const cartCtx = cart.length > 0
+      ? cart.map((c) => `${c.name} ×${c.qty}`).join(', ')
+      : '';
+
+    const result = await chat(userText, cartCtx);
+
+    if (result.type === 'cart_action') {
+      const added = [];
+      const notFound = [];
+
+      result.items.forEach(({ name, qty }) => {
+        const item = findMenuItem(name);
+        if (item) {
+          addToCart(item, qty);
+          added.push(`${item.name} ×${qty}`);
+        } else {
+          notFound.push(name);
+        }
+      });
+
+      // Show Claude's own conversational text if it provided one,
+      // otherwise generate a simple confirmation
+      const aiText = result.text;
+      const confirmLine = added.length
+        ? `Added: ${added.join(', ')}.`
+        : '';
+      const notFoundLine = notFound.length
+        ? `\n\nCouldn't find on menu: ${notFound.join(', ')}.`
+        : '';
+
+      addBot(aiText || `${confirmLine}${notFoundLine}`);
+    } else {
+      addBot(result.content);
+    }
+
     setLoading(false);
     setState(S.MAIN);
   };
 
-  /* ─── Input Handler (State Machine) ─── */
+  /* ─── State machine ─── */
   const handleSend = (text) => {
     if (!text.trim() || loading) return;
     const t = text.trim();
     addUser(t);
     setInput('');
-
     const num = parseInt(t);
 
     switch (state) {
-      /* ── MAIN: Category selection ── */
+      /* ── MAIN — anything that's not a shortcut goes to Claude ── */
       case S.MAIN: {
+        // Numbered category shortcuts
         if (num >= 1 && num <= CATEGORIES.length) {
           const cat = CATEGORIES[num - 1];
           setCurrentCat(num - 1);
           setState(S.CAT);
-          const list = cat.items
-            .map((item, i) => `  ${i + 1}. ${item.name} — ${fmt(item.price)}`)
-            .join('\n');
           addBot(
-            `${cat.icon} ${cat.name}:\n\n${list}\n\nType an item number to add it. Or type 0 to go back.`
+            `${cat.icon} ${cat.name}\n${'─'.repeat(30)}\n` +
+            cat.items.map((item, i) => `  [${i + 1}] ${item.name} — ${fmt(item.price)}`).join('\n') +
+            '\n\n[0] Go back'
           );
-          cat.items.forEach((item) => {
-            if (item.img) {
-              setMessages((p) => [...p, { role: 'bot', content: '', foodCard: item }]);
-            }
-          });
-          scrollDown();
           return;
         }
+        // Checkout keywords
         if (/^(done|checkout|order|pay|finish|confirm)/i.test(t)) {
           if (cart.length === 0) {
-            addBot('Your cart is empty! Pick a category first:\n\n' + categoryList);
+            addBot("Your cart's empty! What do you want to order?");
             return;
           }
           setState(S.TIME);
           addBot(
-            `🛒 Your cart:\n${cartSummary}\n\n💰 Total: ${fmt(cartTotal)}\n\n⏰ What time do you want to pick up?\n(e.g. "12:30" or "1pm")`
+            `CART SUMMARY\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal: ${fmt(cartTotal)}\n\nWhat time do you want to pick up? (e.g. "12:30" or "1pm")`
           );
           return;
         }
+        // Cart view
         if (/^(cart|view|my order|show)/i.test(t)) {
           if (cart.length === 0) {
-            addBot('Cart is empty! Type a number (1-8) to browse.');
+            addBot("Cart's empty — what do you want?");
           } else {
-            addBot(
-              `🛒 Your cart:\n${cartSummary}\n\n💰 Total: ${fmt(cartTotal)}\n\nType "done" to checkout, or keep browsing!`
-            );
+            addBot(`CART\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal: ${fmt(cartTotal)}\n\nType "done" to checkout.`);
           }
           return;
         }
+        // Everything else → Claude
         handleAI(t);
         return;
       }
 
-      /* ── CAT: Item selection within a category ── */
+      /* ── CAT — numbered browsing ── */
       case S.CAT: {
-        if (t === '0' || /back/i.test(t)) {
+        if (t === '0' || /^back$/i.test(t)) {
           setState(S.MAIN);
-          addBot(`Pick a category:\n\n${categoryList}`);
+          addBot(`Categories:\n\n${categoryList}`);
           return;
         }
         const cat = CATEGORIES[currentCat];
         if (num >= 1 && num <= cat.items.length) {
           const item = cat.items[num - 1];
-          const existing = cart.find((c) => c.name === item.name);
-          if (existing) {
-            setCart((p) =>
-              p.map((c) => (c.name === item.name ? { ...c, qty: c.qty + 1 } : c))
-            );
-          } else {
-            setCart((p) => [...p, { ...item, qty: 1 }]);
-          }
+          addToCart(item);
           setState(S.AFTER_ADD);
-          const newTotal = cartTotal + item.price;
           addBot(
-            `✅ Added: ${item.name} (${fmt(item.price)})\n\nCart total: ${fmt(newTotal)}\n\n  1. Add more from ${cat.name}\n  2. Browse other categories\n  3. Checkout →`
+            `Added: ${item.name} — ${fmt(item.price)}\nCart total: ${fmt(cartTotal + item.price)}\n\n  [1] More from ${cat.name}\n  [2] Other categories\n  [3] Checkout`
           );
           return;
         }
+        // Natural language while in category menu also goes to Claude
         handleAI(t);
         return;
       }
 
-      /* ── AFTER_ADD: Post-add options ── */
+      /* ── AFTER_ADD ── */
       case S.AFTER_ADD: {
         if (num === 1 || /more|same|another/i.test(t)) {
           const cat = CATEGORIES[currentCat];
           setState(S.CAT);
-          const list = cat.items
-            .map((item, i) => `  ${i + 1}. ${item.name} — ${fmt(item.price)}`)
-            .join('\n');
           addBot(
-            `${cat.icon} ${cat.name}:\n\n${list}\n\nType an item number. Or 0 to go back.`
+            `${cat.icon} ${cat.name}\n${'─'.repeat(30)}\n` +
+            cat.items.map((item, i) => `  [${i + 1}] ${item.name} — ${fmt(item.price)}`).join('\n') +
+            '\n\n[0] Go back'
           );
           return;
         }
         if (num === 2 || /browse|categor|back|menu/i.test(t)) {
           setState(S.MAIN);
-          addBot(`Pick a category:\n\n${categoryList}`);
+          addBot(`Categories:\n\n${categoryList}`);
           return;
         }
         if (num === 3 || /check|done|order|pay|finish|confirm|go/i.test(t)) {
           setState(S.TIME);
-          addBot(
-            `🛒 Your cart:\n${cartSummary}\n\n💰 Total: ${fmt(cartTotal)}\n\n⏰ What time do you want to pick up?`
-          );
+          addBot(`CART SUMMARY\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal: ${fmt(cartTotal)}\n\nPickup time?`);
           return;
         }
         handleAI(t);
         return;
       }
 
-      /* ── TIME: Pickup time entry ── */
+      /* ── TIME ── */
       case S.TIME: {
         setPickupTime(t);
         setState(S.ID);
-        addBot(`⏰ Pickup time: ${t}\n\n🪪 What's your Student ID?`);
+        addBot(`Got it — pickup at ${t}.\n\nWhat's your student ID?`);
         return;
       }
 
-      /* ── ID: Student ID entry ── */
+      /* ── ID ── */
       case S.ID: {
         setStudentId(t);
         setState(S.CONFIRM);
         addBot(
-          `📋 Order Summary:\n\n${cartSummary}\n\n💰 Total: ${fmt(cartTotal)}\n⏰ Pickup: ${pickupTime}\n🪪 Student ID: ${t}\n\n  1. ✅ Confirm order\n  2. ✏️ Edit order\n  3. ❌ Cancel`
+          `ORDER SUMMARY\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal:    ${fmt(cartTotal)}\nPickup:   ${pickupTime}\nStudent:  ${t}\n${'─'.repeat(30)}\n\n  [1] Confirm\n  [2] Edit\n  [3] Cancel`
         );
         return;
       }
 
-      /* ── CONFIRM: Final confirmation ── */
+      /* ── CONFIRM ── */
       case S.CONFIRM: {
         if (num === 1 || /confirm|yes|ok|go|sure|yep/i.test(t)) {
           setState(S.DONE);
-          addBot(
-            `🎉 Order placed!\n\n${cartSummary}\n\n💰 Total: ${fmt(cartTotal)}\n⏰ Pickup: ${pickupTime}\n🪪 Student: ${studentId}\n\nHead to the Joma counter at ${pickupTime}!\n\n👇 Click below to also place on the official site.`
-          );
-          setMessages((p) => [
-            ...p,
-            {
-              role: 'bot',
-              content: '',
-              link: { url: IPOS_URL, label: 'Open Joma iPos Official Site →' },
-            },
-          ]);
-          scrollDown();
+          setLoading(true);
+          addBot('Placing your order on Joma iPos...');
+
+          placeOrder({
+            cart,
+            pickupTime,
+            studentName: studentId,
+            note: `Student ID: ${studentId}`,
+          })
+            .then((result) => {
+              addBot(
+                `ORDER PLACED ✓\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal:    ${fmt(cartTotal)}\nPickup:   ${pickupTime}\nStudent:  ${studentId}\nOrder #:  ${result.orderCode}\n${'─'.repeat(30)}\n\nYour order is confirmed! Show order #${result.orderCode} at the Joma counter at ${pickupTime}. Pay when you pick up. 🙌`
+              );
+            })
+            .catch((err) => {
+              addBot(
+                `Hmm, I couldn't place the order automatically (${err.message}).\n\nYour order:\n${cartSummary}\nTotal: ${fmt(cartTotal)}\nPickup: ${pickupTime}\n\nPlease order directly at the counter or try again.`
+              );
+            })
+            .finally(() => setLoading(false));
+
+          resetHistory();
           return;
         }
         if (num === 2 || /edit|change|back/i.test(t)) {
           setState(S.MAIN);
-          addBot(
-            `No problem! Here's your cart:\n${cartSummary}\n\nPick a category to add more:\n\n${categoryList}\n\nOr type "done" when ready.`
-          );
+          addBot(`No problem. Here's your cart:\n${cartSummary}\n\nKeep adding or type "done" when ready.`);
           return;
         }
         if (num === 3 || /cancel|reset|clear/i.test(t)) {
@@ -223,86 +276,89 @@ export default function JomaChatBot() {
           setPickupTime('');
           setStudentId('');
           setState(S.MAIN);
-          addBot(
-            `Order cancelled. Let's start fresh!\n\nPick a category:\n\n${categoryList}`
-          );
+          resetHistory();
+          addBot(`Order cancelled. Start fresh — what do you want?`);
           return;
         }
-        addBot('Type 1 to confirm, 2 to edit, or 3 to cancel.');
+        addBot('[1] Confirm  [2] Edit  [3] Cancel');
         return;
       }
 
-      /* ── DONE: Start new order ── */
+      /* ── DONE ── */
       case S.DONE: {
         setCart([]);
         setPickupTime('');
         setStudentId('');
         setState(S.MAIN);
-        addBot(`Starting a new order!\n\nPick a category:\n\n${categoryList}`);
+        addBot(`Starting a new order! What can I get you?`);
         return;
       }
 
       default:
         setState(S.MAIN);
-        addBot('Type a number (1-8) to browse the menu!');
     }
   };
+
+  const totalItems = cart.reduce((s, c) => s + c.qty, 0);
 
   /* ─── Render ─── */
   return (
     <div className="app">
       {/* Header */}
       <header className="header">
-        <div className="header-top">
+        <div className="header-inner">
           <div className="brand">
             <div className="brand-icon">J</div>
-            <div>
-              <div className="brand-name">Joma CIS Bot</div>
-              <div className="brand-status">
+            <div className="brand-text">
+              <span className="brand-name">JOMA CIS CAFE</span>
+              <span className="brand-sub">
                 <span className="status-dot" />
-                ONLINE — ORDER ASSISTANT
-              </div>
+                AI ORDER ASSISTANT
+              </span>
             </div>
           </div>
-        </div>
 
-        {cart.length > 0 && (
-          <div className="cart-strip">
-            <span className="cart-strip-count">
-              🛒 {cart.reduce((s, c) => s + c.qty, 0)} item
-              {cart.reduce((s, c) => s + c.qty, 0) > 1 ? 's' : ''}
-            </span>
-            <span className="cart-strip-total">{fmt(cartTotal)}</span>
-            <button className="cart-strip-btn" onClick={() => handleSend('done')}>
-              Checkout →
-            </button>
-          </div>
-        )}
+          {cart.length > 0 && (
+            <div className="cart-pill">
+              <span className="cart-count">
+                {totalItems} item{totalItems !== 1 ? 's' : ''}
+              </span>
+              <span className="cart-sep">·</span>
+              <span className="cart-total">{fmt(cartTotal)}</span>
+              <button
+                className="cart-checkout-btn"
+                onClick={() => handleSend('done')}
+              >
+                Checkout →
+              </button>
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Messages */}
       <main className="messages">
         {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`msg-row ${m.role === 'user' ? 'user' : 'bot'}`}
-          >
+          <div key={i} className={`msg-row ${m.role}`}>
             {m.role === 'bot' ? (
-              <div className="msg-bot-wrap">
-                {m.foodCard && <FoodCard item={m.foodCard} />}
-                {m.link && (
-                  <a
-                    href={m.link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="msg-link"
-                  >
-                    {m.link.label}
-                  </a>
-                )}
-                {m.content && (
-                  <div className="msg-bubble bot">{m.content}</div>
-                )}
+              <div className="bot-wrap">
+                <div className="bot-avatar">J</div>
+                <div className="bot-content">
+                  {m.content && (
+                    <div className="msg-bubble bot">{m.content}</div>
+                  )}
+                  {m.link && (
+                    <a
+                      href={m.link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ipos-link"
+                    >
+                      {m.link.label}
+                      <span className="link-arrow">↗</span>
+                    </a>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="msg-bubble user">{m.content}</div>
@@ -312,53 +368,55 @@ export default function JomaChatBot() {
 
         {loading && (
           <div className="msg-row bot">
-            <div className="loading-dots">
-              <span />
-              <span />
-              <span />
+            <div className="bot-wrap">
+              <div className="bot-avatar">J</div>
+              <div className="loading-dots">
+                <span /><span /><span />
+              </div>
             </div>
           </div>
         )}
         <div ref={endRef} />
       </main>
 
-      {/* Input Area */}
+      {/* Footer */}
       <footer className="input-area">
-        <div className="quick-buttons">
+        <div className="quick-row">
           {state === S.MAIN && cart.length === 0 &&
             CATEGORIES.slice(0, 4).map((c, i) => (
               <QuickBtn
                 key={c.name}
-                label={`${i + 1}. ${c.icon} ${c.name}`}
+                label={`${c.icon} ${c.name}`}
                 onClick={() => handleSend(String(i + 1))}
               />
             ))}
           {state === S.MAIN && cart.length > 0 && (
             <>
-              <QuickBtn label="🛒 Checkout" onClick={() => handleSend('done')} />
-              <QuickBtn label="📋 View Cart" onClick={() => handleSend('cart')} />
+              <QuickBtn label="Checkout" onClick={() => handleSend('done')} primary />
+              <QuickBtn label="View Cart" onClick={() => handleSend('cart')} />
             </>
           )}
           {state === S.AFTER_ADD && (
             <>
-              <QuickBtn label="1. Add more" onClick={() => handleSend('1')} />
-              <QuickBtn label="2. Other category" onClick={() => handleSend('2')} />
-              <QuickBtn label="3. Checkout →" onClick={() => handleSend('3')} />
+              <QuickBtn label="Add more" onClick={() => handleSend('1')} />
+              <QuickBtn label="Categories" onClick={() => handleSend('2')} />
+              <QuickBtn label="Checkout" onClick={() => handleSend('3')} primary />
             </>
           )}
           {state === S.CONFIRM && (
             <>
-              <QuickBtn label="1. ✅ Confirm" onClick={() => handleSend('1')} />
-              <QuickBtn label="2. ✏️ Edit" onClick={() => handleSend('2')} />
-              <QuickBtn label="3. ❌ Cancel" onClick={() => handleSend('3')} />
+              <QuickBtn label="✓ Confirm" onClick={() => handleSend('1')} primary />
+              <QuickBtn label="Edit" onClick={() => handleSend('2')} />
+              <QuickBtn label="Cancel" onClick={() => handleSend('3')} />
             </>
           )}
           {state === S.CAT && (
-            <QuickBtn label="0. ← Back" onClick={() => handleSend('0')} />
+            <QuickBtn label="← Back" onClick={() => handleSend('0')} />
           )}
         </div>
 
         <div className="input-bar">
+          <span className="prompt-symbol">&gt;</span>
           <input
             ref={inputRef}
             value={input}
@@ -370,16 +428,17 @@ export default function JomaChatBot() {
                 : state === S.ID
                 ? 'Enter student ID...'
                 : state === S.CAT
-                ? 'Item number or 0 to go back...'
-                : 'Type a number or ask me anything...'
+                ? 'Item # or just say what you want...'
+                : 'Tell me what you want...'
             }
+            autoComplete="off"
           />
           <button
             className={`send-btn ${input.trim() ? 'active' : ''}`}
             onClick={() => handleSend(input)}
             disabled={!input.trim() || loading}
           >
-            →
+            ↵
           </button>
         </div>
       </footer>

@@ -1,0 +1,138 @@
+/* ─── iPos Order Service — places real orders on Joma CIS Cafe iPos ─── */
+
+import md5 from 'md5';
+
+const TEST_MODE = import.meta.env.VITE_TEST_MODE === 'true';
+const IPOS_API = 'https://weborder.ipos.vn/api/v1';
+const POS_PARENT = 'BRAND-3M93';
+const POS_ID = 117850;
+
+/* ─── Parse pickup time string → { hour, minute } ─── */
+function parsePickupTime(timeStr) {
+  const t = (timeStr || '').trim().toLowerCase();
+  const m12 = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
+  const m24 = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (m12) {
+    let h = parseInt(m12[1]);
+    const m = parseInt(m12[2] || '0');
+    if (m12[3] === 'pm' && h !== 12) h += 12;
+    if (m12[3] === 'am' && h === 12) h = 0;
+    return { hour: h, minute: m };
+  }
+  if (m24) return { hour: parseInt(m24[1]), minute: parseInt(m24[2]) };
+  const now = new Date();
+  return { hour: now.getHours(), minute: now.getMinutes() };
+}
+
+/* ─── Place order on iPos ─── */
+export async function placeOrder({ cart, pickupTime, studentName, note = '' }) {
+  if (TEST_MODE) {
+    await new Promise((r) => setTimeout(r, 1200)); // fake network delay
+    return {
+      orderCode: 'TEST-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
+      status: 'WAIT_CONFIRM',
+      totalAmount: cart.reduce((s, c) => s + c.price * c.qty, 0),
+    };
+  }
+
+  // 1. Get anonymous token
+  const tokenRes = await fetch(`${IPOS_API}/user/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: 'joma-chatbot-' + Math.random().toString(36).slice(2) }),
+  });
+  const tokenData = await tokenRes.json();
+  if (tokenData.error !== 0) throw new Error('Could not connect to Joma ordering system');
+  const { uid, token } = tokenData.data;
+
+  // 2. Build calculation + signature
+  const itemTotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
+  const calculation = {
+    item_price: itemTotal,
+    voucher_discount: 0,
+    price_with_voucher: itemTotal,
+    service_charge: 0,
+    vat: 0,
+    shipping_fee_type: 'FreeShip',
+    shipping_fee: 0,
+  };
+  const sigStr =
+    Object.keys(calculation).sort().map((k) => calculation[k]).join('_') +
+    '_' + uid + '_0';
+  const signature = md5(sigStr);
+
+  // 3. Build order items (cart items must have iposId + storeItemId from menuData)
+  const { hour, minute } = parsePickupTime(pickupTime);
+  const orderItems = cart.map((item, idx) => ({
+    id: item.iposId,
+    item_id: item.iposId,
+    store_item_id: item.storeItemId,
+    parent_id: item.storeItemId,
+    quantity: item.qty,
+    price: item.price,
+    uid,
+    fix: 0,
+    foc: 0,
+    Pr_Key: `joma${Date.now()}${idx}__${uid.slice(0, 8)}`,
+  }));
+
+  // 4. Submit order
+  const orderBody = {
+    membership_id: '84999999999',
+    membership_name: 'iPOS-O2O',
+    membership_phone_number: '0999999999',
+    brand_id: POS_PARENT,
+    store_id: POS_ID,
+    table_name: '',
+    order_type: 'PICK',
+    setting: {
+      type: 'PICK',
+      calculation,
+      experience: '',
+      source: 'DEFAULT',
+      payment_method: 'PAYMENT_ON_DELIVERY',
+      payment_type: 'OTHER',
+      guss: [uid],
+      voucher_code: '',
+      note: note || '',
+      pickup_at: { hour, minute, number_of_days: 0 },
+      shipping_fee_type: 'FreeShip',
+      shipping_fee: 0,
+      shipping_distance: 0,
+      origin_amount: itemTotal,
+      total_amount: itemTotal,
+      vat: { multiple: 0, value: 0 },
+      service_charge: { value: 0, multiple: 0 },
+      signature,
+      group_hash: '',
+    },
+    items: orderItems,
+    user: {
+      id: 0,
+      name: studentName || 'Student',
+      phone: '0999999999',
+      address: '',
+      sub_address: '',
+      lat: 0,
+      long: 0,
+      address_id: '',
+    },
+  };
+
+  const orderRes = await fetch(`${IPOS_API}/order`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-USER-TOKEN': token },
+    body: JSON.stringify(orderBody),
+  });
+  const orderData = await orderRes.json();
+
+  if (!orderRes.ok || orderData.error !== 0) {
+    throw new Error(orderData.message || 'Order submission failed');
+  }
+
+  return {
+    orderCode: orderData.data.foodbook_code,
+    status: orderData.data.status,
+    totalAmount: orderData.data.total_amount,
+  };
+}
