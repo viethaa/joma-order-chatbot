@@ -1,8 +1,9 @@
-/* ─── iPos Order Service — places real orders on Joma CIS Cafe iPos ─── */
+/* ─── iPos Order Service — places real orders via Playwright browser agent ─── */
 
 import md5 from 'md5';
 
 const TEST_MODE = import.meta.env.VITE_TEST_MODE === 'true';
+const ORDER_SERVER = import.meta.env.VITE_ORDER_SERVER_URL || '';
 const IPOS_API = 'https://weborder.ipos.vn/api/v1';
 const POS_PARENT = 'BRAND-3M93';
 const POS_ID = 117850;
@@ -96,7 +97,28 @@ export async function placeOrder({ cart, pickupTime, studentName, note = '' }) {
     };
   }
 
-  // 1. Fetch live menu + get anonymous token in parallel
+  // 1. If ORDER_SERVER is configured, use the Playwright browser agent
+  if (ORDER_SERVER) {
+    const serverRes = await fetch(`${ORDER_SERVER}/order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cart,
+        pickupTime,
+        customerName: studentName.split(' - ')[0]?.trim() || studentName,
+        studentId: studentName.split(' - ')[1]?.trim() || '',
+      }),
+    });
+    const serverData = await serverRes.json();
+    if (!serverRes.ok) throw new Error(serverData.error || 'Order server failed');
+    return {
+      orderCode: serverData.orderCode,
+      status: 'WAIT_CONFIRM',
+      totalAmount: cart.reduce((s, c) => s + c.price * c.qty, 0),
+    };
+  }
+
+  // 2. Fetch live menu + get anonymous token in parallel
   const [liveMenu, tokenData] = await Promise.all([
     fetchLiveMenu(),
     fetch(`${IPOS_API}/user/generate`, {
