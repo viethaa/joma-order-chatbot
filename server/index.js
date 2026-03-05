@@ -47,8 +47,24 @@ async function fetchViNames(cart) {
 /* ─── Main automation ─── */
 async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }) {
   const cartWithNames = await fetchViNames(cart);
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+    ],
+  });
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    viewport: { width: 390, height: 844 }, // mobile viewport — iPos is mobile-first
+    locale: 'vi-VN',
+  });
+  // Mask automation signals
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  });
+  const page = await context.newPage();
 
   try {
     // Block images/fonts to speed up
@@ -61,9 +77,13 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
     });
 
     console.log('[browser] Navigating to iPos...');
-    await page.goto(IPOS_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(3000);
+    await page.goto(IPOS_URL, { waitUntil: 'networkidle', timeout: 45000 });
+    await page.waitForTimeout(2000);
     await page.screenshot({ path: '/tmp/initial-load.png' });
+
+    // Dump page HTML snippet to see what rendered
+    const htmlSnippet = await page.evaluate(() => document.body.innerHTML.slice(0, 2000));
+    console.log('[debug] page HTML:', htmlSnippet);
 
     // Dismiss "understood" / consent popup using Playwright native click (more reliable)
     try {
@@ -222,6 +242,7 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
     return { orderCode: orderCode || 'CHECK_IPOS', success: true };
 
   } finally {
+    await context.close();
     await browser.close();
   }
 }
