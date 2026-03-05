@@ -56,7 +56,7 @@ export default function JomaChatBot() {
     initialized.current = true;
     setTimeout(() => {
       addBot(
-        `Hey! Welcome to Joma CIS Cafe 👋\n\nJust chat — tell me what you're feeling and I'll take care of the rest.\n\nOr browse by category:\n\n${CATEGORIES.map((c, i) => `  [${i + 1}] ${c.icon} ${c.name}`).join('\n')}`
+        `Hey! Welcome to Joma CIS Cafe 👋\n\nJust type what you want to order and I'll handle it from there.\n\nOr browse by category:\n\n${CATEGORIES.map((c, i) => `  [${i + 1}] ${c.icon} ${c.name}`).join('\n')}`
       );
     }, 300);
   }, [addBot]);
