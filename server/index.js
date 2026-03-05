@@ -62,27 +62,21 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
 
     console.log('[browser] Navigating to iPos...');
     await page.goto(IPOS_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
+    await page.screenshot({ path: '/tmp/initial-load.png' });
 
-    // Dismiss any consent / notice popups (e.g. "understood", "got it")
-    const popupDismissed = await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
-      for (const btn of btns) {
-        const txt = btn.textContent.trim().toLowerCase();
-        if (['understood', 'got it', 'ok', 'agree', 'accept', 'close', 'dismiss'].includes(txt)) {
-          const r = btn.getBoundingClientRect();
-          if (r.width > 0 && r.height > 0) {
-            btn.click();
-            return txt;
-          }
-        }
+    // Dismiss "understood" / consent popup using Playwright native click (more reliable)
+    try {
+      const understood = page.getByRole('button', { name: /understood|got it|agree|accept/i });
+      const count = await understood.count();
+      if (count > 0) {
+        await understood.first().click();
+        console.log('[browser] Dismissed consent popup');
+        await page.waitForTimeout(1000);
       }
-      return null;
-    });
-    if (popupDismissed) {
-      console.log(`[browser] Dismissed popup: "${popupDismissed}"`);
-      await page.waitForTimeout(1000);
-    }
+    } catch { /* no popup */ }
+
+    await page.screenshot({ path: '/tmp/after-dismiss.png' });
 
     // ── Add each item ──
     const searchInput = page.locator('input[placeholder]').first();
