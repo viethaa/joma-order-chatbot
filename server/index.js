@@ -65,58 +65,68 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
     await page.waitForTimeout(2000);
 
     // ── Add each item ──
+    const searchInput = page.locator('input[placeholder]').first();
+
     for (const item of cartWithNames) {
-      console.log(`[browser] Adding: ${item.name} (${item.viName}) x${item.qty}`);
+      // Strip English parenthetical "(Thai Milk Tea)" → cleaner search
+      const searchTerm = item.viName.replace(/\s*\([^)]*\)\s*/g, '').trim();
+      console.log(`[browser] Adding: "${searchTerm}" x${item.qty}`);
 
-      // Search for the item
-      const searchInput = page.locator('input[placeholder]').first();
-      await searchInput.fill(item.viName);
-      await page.waitForTimeout(1000);
+      await searchInput.click();
+      await searchInput.fill(searchTerm);
+      await page.waitForTimeout(1500);
+      await page.screenshot({ path: `/tmp/search-${item.storeItemId || item.name}.png` });
 
-      // Click "+" qty times
       for (let q = 0; q < item.qty; q++) {
-        // Find the item row containing the name, then click its add button
-        const added = await page.evaluate((viName) => {
-          // Walk all elements, find one whose text includes the item name
-          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-          let node;
-          while ((node = walker.nextNode())) {
-            if (node.textContent.trim().includes(viName)) {
-              // Walk up to find a parent container then look for a + button
-              let el = node.parentElement;
-              for (let i = 0; i < 6; i++) {
-                if (!el) break;
-                // Find a button that looks like "add" — has "+" or SVG icon
-                const btns = el.querySelectorAll('button, [role="button"]');
-                for (const btn of btns) {
-                  const txt = btn.textContent.trim();
-                  const cls = btn.className?.toString().toLowerCase() || '';
-                  if (txt === '+' || cls.includes('add') || cls.includes('plus') || cls.includes('btn-add')) {
-                    // Make sure it's not disabled / out of stock
-                    if (!btn.disabled && !btn.closest('[class*="out-of-stock"]')) {
-                      btn.click();
-                      return true;
-                    }
-                  }
-                }
-                el = el.parentElement;
-              }
+        const added = await page.evaluate((term) => {
+          const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+
+          const isAddBtn = (btn) => {
+            const txt = btn.textContent.trim();
+            const cls = btn.className?.toString() || '';
+            return txt === '+' || /\badd\b|\bplus\b|\bbtn.?add\b/i.test(cls);
+          };
+
+          const isEnabled = (btn) =>
+            !btn.disabled && !btn.closest('[class*="out-of-stock"]') && !btn.closest('[class*="sold-out"]');
+
+          const isVisible = (btn) => {
+            const r = btn.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+          };
+
+          // Pass 1: find + button inside a container that mentions the item name
+          const keyword = term.toLowerCase().split(/\s+/)[0];
+          for (const btn of allBtns) {
+            if (!isAddBtn(btn) || !isEnabled(btn) || !isVisible(btn)) continue;
+            const container = btn.closest('li, [class*="item"], [class*="product"], [class*="food"], [class*="dish"], [class*="menu"]');
+            if (container?.textContent.toLowerCase().includes(keyword)) {
+              btn.click();
+              return 'near-item';
             }
           }
+
+          // Pass 2: first visible + button (search already filtered results)
+          for (const btn of allBtns) {
+            if (!isAddBtn(btn) || !isEnabled(btn) || !isVisible(btn)) continue;
+            btn.click();
+            return 'first-visible';
+          }
+
           return false;
-        }, item.viName);
+        }, searchTerm);
 
         if (!added) {
-          // Fallback: take a screenshot to debug
-          await page.screenshot({ path: `/tmp/debug-${item.name}.png` });
+          await page.screenshot({ path: `/tmp/debug-fail-${item.storeItemId || item.name}.png` });
           throw new Error(`Could not find add button for: ${item.name} (${item.viName})`);
         }
-        await page.waitForTimeout(400);
+        console.log(`[browser] Click ${q + 1}/${item.qty} → strategy: ${added}`);
+        await page.waitForTimeout(500);
       }
 
       // Clear search for next item
       await searchInput.fill('');
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(400);
     }
 
     // ── Open cart / checkout ──
