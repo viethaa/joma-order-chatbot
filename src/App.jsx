@@ -56,7 +56,7 @@ export default function JomaChatBot() {
     initialized.current = true;
     setTimeout(() => {
       addBot(
-        `Hey! Welcome to Joma CIS Cafe 👋\n\nTell me what you want — "2 thai milk teas and a croissant" works perfectly. Or tap a category below to browse.`
+        `Hey! Welcome to Joma CIS Cafe 👋\n\nTell me what you want — "2 thai milk teas and a croissant" — and I'll add it straight to your cart.\n\nOr browse by category:\n\n${CATEGORIES.map((c, i) => `  [${i + 1}] ${c.icon} ${c.name}`).join('\n')}`
       );
     }, 300);
   }, [addBot]);
@@ -140,7 +140,7 @@ export default function JomaChatBot() {
     if (!text.trim() || loading) return;
     if (!isOpen) {
       addUser(text.trim());
-      addBot("We're closed right now! Come back between 7am – 4pm (Vietnam time) ☕");
+      addBot("We're closed right now! Come back from 7:00 – 16:00 ☕");
       return;
     }
     const t = text.trim();
@@ -435,36 +435,59 @@ export default function JomaChatBot() {
       {/* Footer */}
       <footer className="input-area">
         <div className="quick-row">
+          {/* MAIN — empty cart: all categories */}
           {state === S.MAIN && cart.length === 0 &&
             CATEGORIES.map((c, i) => (
-              <QuickBtn
-                key={c.name}
-                label={`${c.icon} ${c.name}`}
-                onClick={() => handleSend(String(i + 1))}
-              />
+              <QuickBtn key={c.name} label={`${c.icon} ${c.name}`} onClick={() => handleSend(String(i + 1))} />
             ))}
+
+          {/* MAIN — has cart: checkout first, then categories */}
           {state === S.MAIN && cart.length > 0 && (
             <>
-              <QuickBtn label="Checkout" onClick={() => handleSend('done')} primary />
+              <QuickBtn label="✓ Checkout" onClick={() => handleSend('done')} primary />
               <QuickBtn label="View Cart" onClick={() => handleSend('cart')} />
+              {CATEGORIES.map((c, i) => (
+                <QuickBtn key={c.name} label={`${c.icon} ${c.name}`} onClick={() => handleSend(String(i + 1))} />
+              ))}
             </>
           )}
+
+          {/* CAT — browsing a category */}
+          {state === S.CAT && (
+            <QuickBtn label="← Back" onClick={() => handleSend('0')} />
+          )}
+
+          {/* AFTER_ADD — just added an item */}
           {state === S.AFTER_ADD && (
             <>
+              <QuickBtn label="✓ Checkout" onClick={() => handleSend('3')} primary />
               <QuickBtn label="Add more" onClick={() => handleSend('1')} />
               <QuickBtn label="Categories" onClick={() => handleSend('2')} />
-              <QuickBtn label="Checkout" onClick={() => handleSend('3')} primary />
             </>
           )}
+
+          {/* TIME — suggest common pickup times */}
+          {state === S.TIME && (
+            <>
+              <QuickBtn label="10:00" onClick={() => handleSend('10:00')} />
+              <QuickBtn label="10:30" onClick={() => handleSend('10:30')} />
+              <QuickBtn label="11:00" onClick={() => handleSend('11:00')} />
+              <QuickBtn label="11:30" onClick={() => handleSend('11:30')} />
+              <QuickBtn label="12:00" onClick={() => handleSend('12:00')} />
+              <QuickBtn label="12:30" onClick={() => handleSend('12:30')} />
+              <QuickBtn label="13:00" onClick={() => handleSend('13:00')} />
+              <QuickBtn label="13:30" onClick={() => handleSend('13:30')} />
+              <QuickBtn label="14:00" onClick={() => handleSend('14:00')} />
+            </>
+          )}
+
+          {/* CONFIRM — review order */}
           {state === S.CONFIRM && (
             <>
               <QuickBtn label="✓ Confirm" onClick={() => handleSend('1')} primary />
               <QuickBtn label="Edit" onClick={() => handleSend('2')} />
               <QuickBtn label="Cancel" onClick={() => handleSend('3')} />
             </>
-          )}
-          {state === S.CAT && (
-            <QuickBtn label="← Back" onClick={() => handleSend('0')} />
           )}
         </div>
 
