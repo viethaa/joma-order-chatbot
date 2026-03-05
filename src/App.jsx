@@ -56,7 +56,7 @@ export default function JomaChatBot() {
     initialized.current = true;
     setTimeout(() => {
       addBot(
-        `Hey! Welcome to Joma CIS Cafe 👋\n\nJust tell me what you want — like "2 thai milk teas and a croissant" — and I'll sort it out.\n\nOr browse by category:\n\n${CATEGORIES.map((c, i) => `  [${i + 1}] ${c.icon} ${c.name}`).join('\n')}`
+        `Hey! Welcome to Joma CIS Cafe 👋\n\nTell me what you want — "2 thai milk teas and a croissant" works perfectly. Or tap a category below to browse.`
       );
     }, 300);
   }, [addBot]);
@@ -436,7 +436,7 @@ export default function JomaChatBot() {
       <footer className="input-area">
         <div className="quick-row">
           {state === S.MAIN && cart.length === 0 &&
-            CATEGORIES.slice(0, 4).map((c, i) => (
+            CATEGORIES.map((c, i) => (
               <QuickBtn
                 key={c.name}
                 label={`${c.icon} ${c.name}`}
