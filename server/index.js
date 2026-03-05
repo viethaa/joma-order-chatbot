@@ -78,14 +78,20 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
       await page.screenshot({ path: `/tmp/search-${item.storeItemId || item.name}.png` });
 
       for (let q = 0; q < item.qty; q++) {
+        // Dump all buttons so we can see what's on the page
+        const btnDump = await page.evaluate(() => {
+          return Array.from(document.querySelectorAll('button, [role="button"]')).slice(0, 20).map(b => ({
+            txt: b.textContent.trim().slice(0, 40),
+            cls: (b.className?.toString() || '').slice(0, 80),
+            disabled: b.disabled,
+            visible: (() => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; })(),
+            hasSvg: b.querySelector('svg') !== null,
+          }));
+        });
+        console.log('[debug] buttons after search:', JSON.stringify(btnDump));
+
         const added = await page.evaluate((term) => {
           const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
-
-          const isAddBtn = (btn) => {
-            const txt = btn.textContent.trim();
-            const cls = btn.className?.toString() || '';
-            return txt === '+' || /\badd\b|\bplus\b|\bbtn.?add\b/i.test(cls);
-          };
 
           const isEnabled = (btn) =>
             !btn.disabled && !btn.closest('[class*="out-of-stock"]') && !btn.closest('[class*="sold-out"]');
@@ -93,6 +99,14 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
           const isVisible = (btn) => {
             const r = btn.getBoundingClientRect();
             return r.width > 0 && r.height > 0;
+          };
+
+          const isAddBtn = (btn) => {
+            const txt = btn.textContent.trim();
+            const cls = btn.className?.toString() || '';
+            // text "+" or SVG-only small button or class hints
+            return txt === '+' || /\badd\b|\bplus\b|\bbtn.?add\b/i.test(cls)
+              || (txt === '' && btn.querySelector('svg') && btn.getBoundingClientRect().width < 50);
           };
 
           // Pass 1: find + button inside a container that mentions the item name
@@ -106,11 +120,25 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
             }
           }
 
-          // Pass 2: first visible + button (search already filtered results)
+          // Pass 2: first visible add-like button
           for (const btn of allBtns) {
             if (!isAddBtn(btn) || !isEnabled(btn) || !isVisible(btn)) continue;
             btn.click();
             return 'first-visible';
+          }
+
+          // Pass 3: any small visible SVG button (icon-only add buttons)
+          for (const btn of allBtns) {
+            if (!isEnabled(btn) || !isVisible(btn)) continue;
+            if (!btn.querySelector('svg')) continue;
+            const r = btn.getBoundingClientRect();
+            if (r.width < 60 && r.height < 60) {
+              // Skip obvious nav/close/back buttons
+              const cls = btn.className?.toString().toLowerCase() || '';
+              if (/close|back|prev|nav|cart|bag|search|clear/i.test(cls)) continue;
+              btn.click();
+              return 'svg-small-btn';
+            }
           }
 
           return false;
