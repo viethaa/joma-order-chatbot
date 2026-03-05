@@ -46,25 +46,37 @@ async function fetchLiveMenu() {
 
 /* ─── Resolve a cart item to the best live iPos ID ─── */
 function resolveItem(cartItem, liveMenu) {
-  if (!liveMenu) return { item_id: cartItem.iposId, store_item_id: cartItem.storeItemId };
+  if (!liveMenu) {
+    console.warn(`[iPos] No live menu — using hardcoded ID for "${cartItem.name}":`, cartItem.iposId);
+    return { item_id: cartItem.iposId, store_item_id: cartItem.storeItemId };
+  }
 
   // 1. Match by storeItemId (most reliable)
   const byStore = liveMenu.byStoreId[cartItem.storeItemId];
-  if (byStore) return { item_id: byStore.id, store_item_id: byStore.store_item_id };
+  if (byStore) {
+    console.log(`[iPos] "${cartItem.name}" → matched by storeItemId ${cartItem.storeItemId} → live id ${byStore.id} ("${byStore.name}")`);
+    return { item_id: byStore.id, store_item_id: byStore.store_item_id };
+  }
 
   // 2. Match by exact English name
   const byExact = liveMenu.byName[cartItem.name.toLowerCase()];
-  if (byExact) return { item_id: byExact.id, store_item_id: byExact.store_item_id };
+  if (byExact) {
+    console.log(`[iPos] "${cartItem.name}" → matched by exact name → live id ${byExact.id} ("${byExact.name}")`);
+    return { item_id: byExact.id, store_item_id: byExact.store_item_id };
+  }
 
-  // 3. Match by partial name (live menu uses Vietnamese — check if any live item name
-  //    contains a key word from our English name, e.g. "Americano" in "Cà phê Americano")
+  // 3. Partial keyword match (live menu uses Vietnamese names)
   const keywords = cartItem.name.toLowerCase().split(/\s+/).filter((w) => w.length > 4);
   for (const kw of keywords) {
     const match = liveMenu.raw.find((i) => i.name?.toLowerCase().includes(kw));
-    if (match) return { item_id: match.id, store_item_id: match.store_item_id };
+    if (match) {
+      console.log(`[iPos] "${cartItem.name}" → matched by keyword "${kw}" → live id ${match.id} ("${match.name}")`);
+      return { item_id: match.id, store_item_id: match.store_item_id };
+    }
   }
 
-  // 4. Fall back to hardcoded IDs from menuData
+  // 4. Fall back to hardcoded IDs
+  console.warn(`[iPos] "${cartItem.name}" → NO MATCH FOUND — falling back to hardcoded id ${cartItem.iposId}`);
   return { item_id: cartItem.iposId, store_item_id: cartItem.storeItemId };
 }
 
@@ -131,6 +143,10 @@ export async function placeOrder({ cart, pickupTime, studentName, note = '' }) {
       Pr_Key: `joma${Date.now()}${idx}__${uid.slice(0, 8)}`,
     };
   });
+
+  console.log('[iPos] Final order items:', orderItems.map((i) => ({
+    name: i.name, item_id: i.item_id, store_item_id: i.store_item_id, qty: i.quantity,
+  })));
 
   // 4. Submit order
   const orderBody = {
