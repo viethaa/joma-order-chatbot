@@ -24,14 +24,59 @@ export function parsePickupTime(timeStr) {
   return { hour: now.getHours(), minute: now.getMinutes() };
 }
 
+/* ─── Fetch live menu from iPos and build a lookup map ─── */
+async function fetchLiveMenu() {
+  try {
+    const res = await fetch(`${IPOS_API}/menu?pos_parent=${POS_PARENT}&pos_id=${POS_ID}`);
+    const data = await res.json();
+    if (data.error !== 0 || !data.data?.items) return null;
+    // Build map: storeItemId → live item
+    const byStoreId = {};
+    // Build map: normalised name → live item
+    const byName = {};
+    for (const item of data.data.items) {
+      if (item.store_item_id) byStoreId[item.store_item_id] = item;
+      if (item.name) byName[item.name.toLowerCase()] = item;
+    }
+    return { byStoreId, byName, raw: data.data.items };
+  } catch {
+    return null;
+  }
+}
+
+/* ─── Resolve a cart item to the best live iPos ID ─── */
+function resolveItem(cartItem, liveMenu) {
+  if (!liveMenu) return { item_id: cartItem.iposId, store_item_id: cartItem.storeItemId };
+
+  // 1. Match by storeItemId (most reliable)
+  const byStore = liveMenu.byStoreId[cartItem.storeItemId];
+  if (byStore) return { item_id: byStore.id, store_item_id: byStore.store_item_id };
+
+  // 2. Match by exact English name
+  const byExact = liveMenu.byName[cartItem.name.toLowerCase()];
+  if (byExact) return { item_id: byExact.id, store_item_id: byExact.store_item_id };
+
+  // 3. Match by partial name (live menu uses Vietnamese — check if any live item name
+  //    contains a key word from our English name, e.g. "Americano" in "Cà phê Americano")
+  const keywords = cartItem.name.toLowerCase().split(/\s+/).filter((w) => w.length > 4);
+  for (const kw of keywords) {
+    const match = liveMenu.raw.find((i) => i.name?.toLowerCase().includes(kw));
+    if (match) return { item_id: match.id, store_item_id: match.store_item_id };
+  }
+
+  // 4. Fall back to hardcoded IDs from menuData
+  return { item_id: cartItem.iposId, store_item_id: cartItem.storeItemId };
+}
+
 /* ─── Place order on iPos ─── */
 export async function placeOrder({ cart, pickupTime, studentName, note = '' }) {
   const orderNote = [
     note || studentName,
     cart.map((i) => `${i.name} x${i.qty}`).join(', '),
   ].filter(Boolean).join(' | ');
+
   if (TEST_MODE) {
-    await new Promise((r) => setTimeout(r, 1200)); // fake network delay
+    await new Promise((r) => setTimeout(r, 1200));
     return {
       orderCode: 'TEST-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
       status: 'WAIT_CONFIRM',
@@ -39,13 +84,16 @@ export async function placeOrder({ cart, pickupTime, studentName, note = '' }) {
     };
   }
 
-  // 1. Get anonymous token
-  const tokenRes = await fetch(`${IPOS_API}/user/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ device_id: 'joma-chatbot-' + Math.random().toString(36).slice(2) }),
-  });
-  const tokenData = await tokenRes.json();
+  // 1. Fetch live menu + get anonymous token in parallel
+  const [liveMenu, tokenData] = await Promise.all([
+    fetchLiveMenu(),
+    fetch(`${IPOS_API}/user/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'joma-chatbot-' + Math.random().toString(36).slice(2) }),
+    }).then((r) => r.json()),
+  ]);
+
   if (tokenData.error !== 0) throw new Error('Could not connect to Joma ordering system');
   const { uid, token } = tokenData.data;
 
@@ -65,21 +113,24 @@ export async function placeOrder({ cart, pickupTime, studentName, note = '' }) {
     '_' + uid + '_0';
   const signature = md5(sigStr);
 
-  // 3. Build order items (cart items must have iposId + storeItemId from menuData)
+  // 3. Build order items — resolve each to the live iPos ID
   const { hour, minute } = parsePickupTime(pickupTime);
-  const orderItems = cart.map((item, idx) => ({
-    id: idx + 1,
-    item_id: item.iposId,
-    store_item_id: item.storeItemId,
-    name: item.name,
-    parent_id: null,
-    quantity: item.qty,
-    price: item.price,
-    uid,
-    fix: 0,
-    foc: 0,
-    Pr_Key: `joma${Date.now()}${idx}__${uid.slice(0, 8)}`,
-  }));
+  const orderItems = cart.map((item, idx) => {
+    const { item_id, store_item_id } = resolveItem(item, liveMenu);
+    return {
+      id: idx + 1,
+      item_id,
+      store_item_id,
+      name: item.name,
+      parent_id: null,
+      quantity: item.qty,
+      price: item.price,
+      uid,
+      fix: 0,
+      foc: 0,
+      Pr_Key: `joma${Date.now()}${idx}__${uid.slice(0, 8)}`,
+    };
+  });
 
   // 4. Submit order
   const orderBody = {
