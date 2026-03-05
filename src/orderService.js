@@ -147,6 +147,8 @@ export async function placeOrder({ cart, pickupTime, studentName, note = '' }) {
   console.log('[iPos] Final order items:', orderItems.map((i) => ({
     name: i.name, item_id: i.item_id, store_item_id: i.store_item_id, qty: i.quantity,
   })));
+  console.log('[iPos] Signature string:', sigStr);
+  console.log('[iPos] Signature (MD5):', signature);
 
   // 4. Submit order
   const orderBody = {
@@ -199,7 +201,8 @@ export async function placeOrder({ cart, pickupTime, studentName, note = '' }) {
   const orderData = await orderRes.json();
 
   if (!orderRes.ok || orderData.error !== 0) {
-    throw new Error(orderData.message || 'Order submission failed');
+    console.error('[iPos] Order failed — status:', orderRes.status, '— response:', JSON.stringify(orderData));
+    throw new Error(orderData.message || `Order submission failed (${orderRes.status})`);
   }
 
   return {
