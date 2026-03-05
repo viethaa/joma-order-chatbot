@@ -138,11 +138,11 @@ export default function JomaChatBot() {
   /* ─── State machine ─── */
   const handleSend = (text) => {
     if (!text.trim() || loading) return;
-    // if (!isOpen) {
-    //   addUser(text.trim());
-    //   addBot("We're closed right now! Come back from 7:00 – 16:00 ☕");
-    //   return;
-    // }
+    if (!isOpen) {
+      addUser(text.trim());
+      addBot("We're closed right now! Come back from 7:00 – 16:00 ☕");
+      return;
+    }
     const t = text.trim();
     addUser(t);
     setInput('');
