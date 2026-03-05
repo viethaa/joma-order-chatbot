@@ -64,6 +64,26 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
     await page.goto(IPOS_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2000);
 
+    // Dismiss any consent / notice popups (e.g. "understood", "got it")
+    const popupDismissed = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
+      for (const btn of btns) {
+        const txt = btn.textContent.trim().toLowerCase();
+        if (['understood', 'got it', 'ok', 'agree', 'accept', 'close', 'dismiss'].includes(txt)) {
+          const r = btn.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) {
+            btn.click();
+            return txt;
+          }
+        }
+      }
+      return null;
+    });
+    if (popupDismissed) {
+      console.log(`[browser] Dismissed popup: "${popupDismissed}"`);
+      await page.waitForTimeout(1000);
+    }
+
     // ── Add each item ──
     const searchInput = page.locator('input[placeholder]').first();
 
