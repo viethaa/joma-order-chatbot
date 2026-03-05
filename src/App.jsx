@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { STATES as S, fmt } from './config';
 import CATEGORIES from './menuData';
 import { chat, resetHistory } from './aiService';
-import { placeOrder } from './orderService';
+import { placeOrder, parsePickupTime } from './orderService';
 import QuickBtn from './components/QuickBtn';
 
 /* ─── Find a menu item by exact or fuzzy name ─── */
@@ -28,6 +28,7 @@ export default function JomaChatBot() {
   const [state, setState] = useState(S.MAIN);
   const [currentCat, setCurrentCat] = useState(null);
   const [cart, setCart] = useState([]);
+  const [customerName, setCustomerName] = useState('');
   const [pickupTime, setPickupTime] = useState('');
   const [studentId, setStudentId] = useState('');
   const [loading, setLoading] = useState(false);
@@ -89,6 +90,17 @@ export default function JomaChatBot() {
       : '';
 
     const result = await chat(userText, cartCtx);
+
+    if (result.type === 'checkout') {
+      if (cart.length === 0) {
+        addBot("Your cart's empty! What do you want to order?");
+      } else {
+        setState(S.NAME);
+        addBot(`What's your name?`);
+      }
+      setLoading(false);
+      return;
+    }
 
     if (result.type === 'cart_action') {
       const added = [];
@@ -157,10 +169,8 @@ export default function JomaChatBot() {
             addBot("Your cart's empty! What do you want to order?");
             return;
           }
-          setState(S.TIME);
-          addBot(
-            `CART SUMMARY\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal: ${fmt(cartTotal)}\n\nWhat time do you want to pick up? (e.g. "12:30" or "1pm")`
-          );
+          setState(S.NAME);
+          addBot(`What's your name?`);
           return;
         }
         // Cart view
@@ -217,19 +227,35 @@ export default function JomaChatBot() {
           return;
         }
         if (num === 3 || /check|done|order|pay|finish|confirm|go/i.test(t)) {
-          setState(S.TIME);
-          addBot(`CART SUMMARY\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal: ${fmt(cartTotal)}\n\nPickup time?`);
+          setState(S.NAME);
+          addBot(`What's your name?`);
           return;
         }
         handleAI(t);
         return;
       }
 
+      /* ── NAME ── */
+      case S.NAME: {
+        setCustomerName(t);
+        setState(S.TIME);
+        addBot(`Hi ${t}! What time do you want to pick up? (e.g. "12:30" or "1pm")`);
+        return;
+      }
+
       /* ── TIME ── */
       case S.TIME: {
+        const { hour, minute } = parsePickupTime(t);
+        const now = new Date();
+        const vnNowMinutes = ((now.getUTCHours() + 7) % 24) * 60 + now.getUTCMinutes();
+        const pickedMinutes = hour * 60 + minute;
+        if (pickedMinutes <= vnNowMinutes) {
+          addBot(`That time has already passed. It's currently ${String(Math.floor(vnNowMinutes / 60)).padStart(2,'0')}:${String(vnNowMinutes % 60).padStart(2,'0')} — pick a later time.`);
+          return;
+        }
         setPickupTime(t);
         setState(S.ID);
-        addBot(`Got it — pickup at ${t}.\n\nWhat's your student ID?`);
+        addBot(`What's your student ID?`);
         return;
       }
 
@@ -238,7 +264,7 @@ export default function JomaChatBot() {
         setStudentId(t);
         setState(S.CONFIRM);
         addBot(
-          `ORDER SUMMARY\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal:    ${fmt(cartTotal)}\nPickup:   ${pickupTime}\nStudent:  ${t}\n${'─'.repeat(30)}\n\n  [1] Confirm\n  [2] Edit\n  [3] Cancel`
+          `ORDER SUMMARY\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal:    ${fmt(cartTotal)}\nPickup:   ${pickupTime}\nContact:  ${customerName} - ${t}\n${'─'.repeat(30)}\n\n  [1] Confirm\n  [2] Edit\n  [3] Cancel`
         );
         return;
       }
@@ -253,12 +279,12 @@ export default function JomaChatBot() {
           placeOrder({
             cart,
             pickupTime,
-            studentName: studentId,
-            note: `Student ID: ${studentId}`,
+            studentName: `${customerName} - ${studentId}`,
+            note: `${customerName} - ${studentId}`,
           })
             .then((result) => {
               addBot(
-                `ORDER PLACED ✓\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal:    ${fmt(cartTotal)}\nPickup:   ${pickupTime}\nStudent:  ${studentId}\nOrder #:  ${result.orderCode}\n${'─'.repeat(30)}\n\nYour order is confirmed! Show order #${result.orderCode} at the Joma counter at ${pickupTime}. Pay when you pick up. 🙌`
+                `ORDER PLACED ✓\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal:    ${fmt(cartTotal)}\nPickup:   ${pickupTime}\nContact:  ${customerName} - ${studentId}\nOrder #:  ${result.orderCode}\n${'─'.repeat(30)}\n\nYour order is confirmed! Show order #${result.orderCode} at the Joma counter at ${pickupTime}. 🙌`
               );
             })
             .catch((err) => {
@@ -278,6 +304,7 @@ export default function JomaChatBot() {
         }
         if (num === 3 || /cancel|reset|clear/i.test(t)) {
           setCart([]);
+          setCustomerName('');
           setPickupTime('');
           setStudentId('');
           setState(S.MAIN);
@@ -292,6 +319,7 @@ export default function JomaChatBot() {
       /* ── DONE ── */
       case S.DONE: {
         setCart([]);
+        setCustomerName('');
         setPickupTime('');
         setStudentId('');
         setState(S.MAIN);
@@ -448,7 +476,9 @@ export default function JomaChatBot() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend(input)}
             placeholder={
-              state === S.TIME
+              state === S.NAME
+                ? 'Enter your name...'
+                : state === S.TIME
                 ? 'Enter pickup time...'
                 : state === S.ID
                 ? 'Enter student ID...'

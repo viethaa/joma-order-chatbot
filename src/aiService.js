@@ -33,7 +33,8 @@ RULES:
 - If the customer is vague (e.g. "a coffee"), ask which one or pick the most popular default and say what you picked.
 - If they say "make it two" or "actually three", figure out what they meant from context.
 - Never make up prices or items. Only use what's on the menu.
-- Be natural — you're a barista, not a robot.`;
+- Be natural — you're a barista, not a robot.
+- If the customer indicates they're done ordering and want to checkout / pay / finish (e.g. "that's all", "done", "checkout", "let's pay", "no let's checkout"), call start_checkout — do NOT handle payment or IDs yourself.`;
 }
 
 const tools = [
@@ -59,6 +60,14 @@ const tools = [
         },
         required: ['items'],
       },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'start_checkout',
+      description: "Call this when the customer is done ordering and wants to checkout / pay / finish their order.",
+      parameters: { type: 'object', properties: {} },
     },
   },
 ];
@@ -100,6 +109,10 @@ export async function chat(userText, cartContext = '') {
     history.push(message);
 
     const toolCall = message.tool_calls?.[0];
+
+    if (toolCall?.function?.name === 'start_checkout') {
+      return { type: 'checkout' };
+    }
 
     if (toolCall?.function?.name === 'add_to_cart') {
       const args = JSON.parse(toolCall.function.arguments);

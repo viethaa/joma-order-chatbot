@@ -8,7 +8,7 @@ const POS_PARENT = 'BRAND-3M93';
 const POS_ID = 117850;
 
 /* ─── Parse pickup time string → { hour, minute } ─── */
-function parsePickupTime(timeStr) {
+export function parsePickupTime(timeStr) {
   const t = (timeStr || '').trim().toLowerCase();
   const m12 = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
   const m24 = t.match(/^(\d{1,2}):(\d{2})$/);
@@ -26,6 +26,10 @@ function parsePickupTime(timeStr) {
 
 /* ─── Place order on iPos ─── */
 export async function placeOrder({ cart, pickupTime, studentName, note = '' }) {
+  const orderNote = [
+    note || studentName,
+    cart.map((i) => `${i.name} x${i.qty}`).join(', '),
+  ].filter(Boolean).join(' | ');
   if (TEST_MODE) {
     await new Promise((r) => setTimeout(r, 1200)); // fake network delay
     return {
@@ -64,10 +68,11 @@ export async function placeOrder({ cart, pickupTime, studentName, note = '' }) {
   // 3. Build order items (cart items must have iposId + storeItemId from menuData)
   const { hour, minute } = parsePickupTime(pickupTime);
   const orderItems = cart.map((item, idx) => ({
-    id: item.iposId,
+    id: idx + 1,
     item_id: item.iposId,
     store_item_id: item.storeItemId,
-    parent_id: item.storeItemId,
+    name: item.name,
+    parent_id: null,
     quantity: item.qty,
     price: item.price,
     uid,
@@ -94,7 +99,7 @@ export async function placeOrder({ cart, pickupTime, studentName, note = '' }) {
       payment_type: 'OTHER',
       guss: [uid],
       voucher_code: '',
-      note: note || '',
+      note: orderNote,
       pickup_at: { hour, minute, number_of_days: 0 },
       shipping_fee_type: 'FreeShip',
       shipping_fee: 0,

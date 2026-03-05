@@ -20,6 +20,7 @@ export const STATES = {
   MAIN: 'MAIN',
   CAT: 'CAT',
   AFTER_ADD: 'AFTER_ADD',
+  NAME: 'NAME',
   TIME: 'TIME',
   ID: 'ID',
   CONFIRM: 'CONFIRM',
