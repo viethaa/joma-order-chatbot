@@ -11,6 +11,7 @@ WORKDIR /app
 
 COPY package.json .
 RUN npm install
+ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 RUN npx playwright install chromium
 
 COPY . .

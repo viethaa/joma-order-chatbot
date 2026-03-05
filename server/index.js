@@ -1,6 +1,10 @@
 import express from 'express';
 import { chromium } from 'playwright';
 
+console.log('[startup] Server starting...');
+console.log('[startup] Node version:', process.version);
+console.log('[startup] PORT:', process.env.PORT);
+
 const app = express();
 app.use(express.json());
 app.use((req, res, next) => {
