@@ -57,7 +57,7 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
   });
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    viewport: { width: 390, height: 844 }, // mobile viewport — iPos is mobile-first
+    viewport: { width: 1280, height: 900 },
     locale: 'vi-VN',
   });
   // Mask automation signals
@@ -106,8 +106,8 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
       const searchTerm = item.viName.replace(/\s*\([^)]*\)\s*/g, '').trim();
       console.log(`[browser] Adding: "${searchTerm}" x${item.qty}`);
 
-      await searchInput.click();
-      await searchInput.fill(searchTerm);
+      await searchInput.scrollIntoViewIfNeeded();
+      await searchInput.fill(searchTerm, { force: true });
       await page.waitForTimeout(1500);
       await page.screenshot({ path: `/tmp/search-${item.storeItemId || item.name}.png` });
 
@@ -187,7 +187,7 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
       }
 
       // Clear search for next item
-      await searchInput.fill('');
+      await searchInput.fill('', { force: true });
       await page.waitForTimeout(400);
     }
 
