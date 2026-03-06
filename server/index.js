@@ -107,7 +107,16 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
       const searchTerm = item.viName.replace(/\s*\([^)]*\)\s*/g, '').trim();
       console.log(`[browser] Adding: "${searchTerm}" x${item.qty}`);
 
-      await searchInput.fill(searchTerm, { force: true });
+      // Use evaluate to set value + fire input event (triggers Vue reactivity)
+      await page.evaluate((term) => {
+        const inp = document.querySelector('input[placeholder*="tìm"]') ||
+          Array.from(document.querySelectorAll('input')).find(i => i.placeholder.includes('tìm') || i.placeholder.includes('search'));
+        if (!inp) return;
+        inp.focus();
+        inp.value = term;
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+      }, searchTerm);
       await page.waitForTimeout(1500);
       await page.screenshot({ path: `/tmp/search-${item.storeItemId || item.name}.png` });
 
@@ -187,7 +196,13 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
       }
 
       // Clear search for next item
-      await searchInput.fill('', { force: true });
+      await page.evaluate(() => {
+        const inp = document.querySelector('input[placeholder*="tìm"]') ||
+          Array.from(document.querySelectorAll('input')).find(i => i.placeholder.includes('tìm'));
+        if (!inp) return;
+        inp.value = '';
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+      });
       await page.waitForTimeout(400);
     }
 
@@ -201,26 +216,31 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
     console.log('[debug] after-add HTML (tail):', afterAddHtml);
 
     console.log('[browser] Opening cart...');
-    // On mobile iPos, a sticky bottom bar appears after adding items
-    const cartBtn = page.locator(
-      '[class*="order-group__bottom"], [class*="btn-order"], [class*="sticky-cart"], [class*="cart-bottom"], [class*="order-bottom"], [class*="order__bottom"]'
-    ).first();
-    const cartBtnCount = await cartBtn.count();
-    if (cartBtnCount > 0) {
-      await cartBtn.click({ force: true });
-    } else {
-      // Fallback: click any visible element that has order count / price
-      await page.evaluate(() => {
-        const all = Array.from(document.querySelectorAll('[class*="order"], [class*="cart"]'));
-        for (const el of all) {
-          const r = el.getBoundingClientRect();
-          if (r.width > 0 && r.height > 0 && r.bottom > window.innerHeight * 0.7) {
-            el.click();
-            return;
-          }
-        }
+    // Dump all order-group elements to find the cart bottom bar
+    const orderGroupInfo = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('[class*="order-group"], [class*="order__group"]')).map(el => ({
+        cls: el.className.slice(0, 100),
+        txt: el.textContent.trim().slice(0, 60),
+        visible: (() => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; })(),
+        bottom: el.getBoundingClientRect().bottom,
+      }));
+    });
+    console.log('[debug] order-group elements:', JSON.stringify(orderGroupInfo));
+
+    // Click the visible order-group element closest to bottom of screen
+    const clicked = await page.evaluate(() => {
+      const els = Array.from(document.querySelectorAll('[class*="order-group"], [class*="order__group"]'));
+      const visible = els.filter(el => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
       });
-    }
+      if (visible.length === 0) return false;
+      // Sort by bottom position descending (most at bottom wins)
+      visible.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom);
+      visible[0].click();
+      return visible[0].className;
+    });
+    console.log('[browser] Cart click result:', clicked);
     await page.waitForTimeout(1500);
 
     // Dump checkout form HTML
