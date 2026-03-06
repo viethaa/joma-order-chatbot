@@ -141,9 +141,9 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
           const isAddEl = (el) => {
             const txt = el.textContent.trim();
             const cls = (el.className?.toString() || '').toLowerCase();
-            return txt === '+' ||
-              /\badd\b|\bplus\b|\bbtn[_-]?add\b|\badd[_-]?btn\b/i.test(cls) ||
-              /btn__add|add-item|item-add/i.test(cls);
+            return txt === '+' || txt.toLowerCase() === 'add' ||
+              /btn-add-cart|btn__add|add-item|item-add/i.test(cls) ||
+              /\bplus\b/i.test(cls);
           };
 
           // Pass 1: element looks like an add button AND is near the item name
@@ -161,7 +161,7 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
           for (const el of allEls) {
             if (!isAddEl(el) || isBlocked(el) || !isVisible(el)) continue;
             const cls = (el.className?.toString() || '').toLowerCase();
-            if (/close|back|prev|nav|cart|bag|search|clear|lang|flag/i.test(cls)) continue;
+            if (/close|back|prev|nav|bag|search|clear|lang|flag/i.test(cls)) continue;
             el.click();
             return 'first-visible';
           }
