@@ -87,7 +87,7 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
 
     // Dismiss "understood" / consent popup using Playwright native click (more reliable)
     try {
-      const understood = page.getByRole('button', { name: /understood|got it|agree|accept/i });
+      const understood = page.getByRole('button', { name: /understood|got it|agree|accept|đã hiểu|đồng ý|tiếp tục/i });
       const count = await understood.count();
       if (count > 0) {
         await understood.first().click();
