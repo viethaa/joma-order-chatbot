@@ -82,7 +82,7 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
     await page.screenshot({ path: '/tmp/initial-load.png' });
 
     // Dump page HTML snippet to see what rendered
-    const htmlSnippet = await page.evaluate(() => document.body.innerHTML.slice(0, 2000));
+    const htmlSnippet = await page.evaluate(() => document.body.innerHTML.slice(0, 5000));
     console.log('[debug] page HTML:', htmlSnippet);
 
     // Dismiss "understood" / consent popup using Playwright native click (more reliable)
@@ -112,66 +112,66 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
       await page.screenshot({ path: `/tmp/search-${item.storeItemId || item.name}.png` });
 
       for (let q = 0; q < item.qty; q++) {
-        // Dump all buttons so we can see what's on the page
+        // Dump all clickable elements (buttons AND iPos div-based touch targets)
         const btnDump = await page.evaluate(() => {
-          return Array.from(document.querySelectorAll('button, [role="button"]')).slice(0, 20).map(b => ({
+          const sel = 'button, [role="button"], [class*="cs-touch"], [class*="btn__"], [class*="add"], [class*="plus"]';
+          return Array.from(document.querySelectorAll(sel)).slice(0, 30).map(b => ({
+            tag: b.tagName,
             txt: b.textContent.trim().slice(0, 40),
             cls: (b.className?.toString() || '').slice(0, 80),
-            disabled: b.disabled,
             visible: (() => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; })(),
-            hasSvg: b.querySelector('svg') !== null,
           }));
         });
-        console.log('[debug] buttons after search:', JSON.stringify(btnDump));
+        console.log('[debug] clickables after search:', JSON.stringify(btnDump));
 
         const added = await page.evaluate((term) => {
-          const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+          // iPos uses div.component__cs-touch for all interactive elements
+          const CLICKABLE = 'button, [role="button"], [class*="cs-touch"], [class*="btn__"], [class*="touch"]';
+          const allEls = Array.from(document.querySelectorAll(CLICKABLE));
 
-          const isEnabled = (btn) =>
-            !btn.disabled && !btn.closest('[class*="out-of-stock"]') && !btn.closest('[class*="sold-out"]');
-
-          const isVisible = (btn) => {
-            const r = btn.getBoundingClientRect();
+          const isVisible = (el) => {
+            const r = el.getBoundingClientRect();
             return r.width > 0 && r.height > 0;
           };
 
-          const isAddBtn = (btn) => {
-            const txt = btn.textContent.trim();
-            const cls = btn.className?.toString() || '';
-            // text "+" or SVG-only small button or class hints
-            return txt === '+' || /\badd\b|\bplus\b|\bbtn.?add\b/i.test(cls)
-              || (txt === '' && btn.querySelector('svg') && btn.getBoundingClientRect().width < 50);
+          const isBlocked = (el) =>
+            el.closest('[class*="out-of-stock"]') || el.closest('[class*="sold-out"]') ||
+            el.disabled || el.getAttribute('disabled') != null;
+
+          const isAddEl = (el) => {
+            const txt = el.textContent.trim();
+            const cls = (el.className?.toString() || '').toLowerCase();
+            return txt === '+' ||
+              /\badd\b|\bplus\b|\bbtn[_-]?add\b|\badd[_-]?btn\b/i.test(cls) ||
+              /btn__add|add-item|item-add/i.test(cls);
           };
 
-          // Pass 1: find + button inside a container that mentions the item name
+          // Pass 1: element looks like an add button AND is near the item name
           const keyword = term.toLowerCase().split(/\s+/)[0];
-          for (const btn of allBtns) {
-            if (!isAddBtn(btn) || !isEnabled(btn) || !isVisible(btn)) continue;
-            const container = btn.closest('li, [class*="item"], [class*="product"], [class*="food"], [class*="dish"], [class*="menu"]');
+          for (const el of allEls) {
+            if (!isAddEl(el) || isBlocked(el) || !isVisible(el)) continue;
+            const container = el.closest('[class*="item"], [class*="product"], [class*="food"], [class*="dish"], [class*="menu"], li');
             if (container?.textContent.toLowerCase().includes(keyword)) {
-              btn.click();
+              el.click();
               return 'near-item';
             }
           }
 
-          // Pass 2: first visible add-like button
-          for (const btn of allBtns) {
-            if (!isAddBtn(btn) || !isEnabled(btn) || !isVisible(btn)) continue;
-            btn.click();
+          // Pass 2: first visible add-like element anywhere
+          for (const el of allEls) {
+            if (!isAddEl(el) || isBlocked(el) || !isVisible(el)) continue;
+            const cls = (el.className?.toString() || '').toLowerCase();
+            if (/close|back|prev|nav|cart|bag|search|clear|lang|flag/i.test(cls)) continue;
+            el.click();
             return 'first-visible';
           }
 
-          // Pass 3: any small visible SVG button (icon-only add buttons)
-          for (const btn of allBtns) {
-            if (!isEnabled(btn) || !isVisible(btn)) continue;
-            if (!btn.querySelector('svg')) continue;
-            const r = btn.getBoundingClientRect();
-            if (r.width < 60 && r.height < 60) {
-              // Skip obvious nav/close/back buttons
-              const cls = btn.className?.toString().toLowerCase() || '';
-              if (/close|back|prev|nav|cart|bag|search|clear/i.test(cls)) continue;
-              btn.click();
-              return 'svg-small-btn';
+          // Pass 3: any small visible element with "+" text
+          for (const el of allEls) {
+            if (isBlocked(el) || !isVisible(el)) continue;
+            if (el.textContent.trim() === '+') {
+              el.click();
+              return 'plus-text';
             }
           }
 
