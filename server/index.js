@@ -126,7 +126,7 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
 
         const added = await page.evaluate((term) => {
           // iPos uses div.component__cs-touch for all interactive elements
-          const CLICKABLE = 'button, [role="button"], [class*="cs-touch"], [class*="btn__"], [class*="touch"]';
+          const CLICKABLE = 'button, [role="button"], [class*="cs-touch"], [class*="btn__"], [class*="btn-"], [class*="touch"], [class*="add"]';
           const allEls = Array.from(document.querySelectorAll(CLICKABLE));
 
           const isVisible = (el) => {
