@@ -59,6 +59,7 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     viewport: { width: 390, height: 844 }, // mobile-only checkout on iPos
     locale: 'vi-VN',
+    timezoneId: 'Asia/Ho_Chi_Minh', // Railway runs UTC — force Vietnam time so iPos sees store as open
   });
   // Mask automation signals
   await context.addInitScript(() => {
