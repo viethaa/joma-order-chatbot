@@ -29,7 +29,7 @@ body {
   background: var(--bg);
   font-family: var(--mono);
   color: var(--text);
-  background-image: radial-gradient(circle, rgba(212, 170, 100, 0.09) 1px, transparent 1px);
+  background-image: radial-gradient(circle, rgba(212, 170, 100, 0.18) 1px, transparent 1px);
   background-size: 26px 26px;
 }
 

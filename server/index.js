@@ -193,42 +193,47 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
 
     // ── Open cart / checkout ──
     console.log('[browser] Opening cart...');
-    // Click the cart button (typically top-right, shows item count)
-    const cartBtn = page.locator('[class*="cart"]:not(input), [class*="bag"], [class*="order-btn"]').first();
-    await cartBtn.click();
-    await page.waitForTimeout(1000);
+    const cartBtn = page.locator('[class*="order-floating"], [class*="floating__button"]').first();
+    await cartBtn.click({ force: true });
+    await page.waitForTimeout(1500);
+
+    // Dump checkout form HTML to see actual field names
+    const checkoutHtml = await page.evaluate(() => document.body.innerHTML.slice(0, 4000));
+    console.log('[debug] checkout HTML:', checkoutHtml);
 
     // ── Fill checkout form ──
     console.log('[browser] Filling checkout form...');
 
-    // Name field
-    const nameInput = page.locator('input[placeholder*="name" i], input[name*="name" i]').first();
-    await nameInput.fill(`${customerName} - ${studentId}`);
+    // Name — iPos uses Vietnamese placeholder "Họ và tên" or similar
+    const nameInput = page.locator(
+      'input[placeholder*="tên" i], input[placeholder*="name" i], input[placeholder*="họ" i], input[name*="name" i], input[name*="customer" i]'
+    ).first();
+    await nameInput.fill(`${customerName} - ${studentId}`, { force: true });
 
-    // Phone field (required by iPos — use student ID digits only or placeholder)
+    // Phone
     const phoneDigits = studentId.replace(/\D/g, '').padEnd(10, '0').slice(0, 10);
-    const phoneInput = page.locator('input[type="tel"], input[placeholder*="phone" i], input[placeholder*="số" i]').first();
-    await phoneInput.fill(phoneDigits);
+    const phoneInput = page.locator(
+      'input[type="tel"], input[placeholder*="điện thoại" i], input[placeholder*="phone" i], input[placeholder*="số" i]'
+    ).first();
+    const hasPhone = await phoneInput.count();
+    if (hasPhone > 0) await phoneInput.fill(phoneDigits, { force: true });
 
-    // Pickup time — look for a time input or select
-    if (pickupTime) {
-      const timeInput = page.locator('input[type="time"], input[placeholder*="time" i], input[placeholder*="giờ" i]').first();
-      const hasTime = await timeInput.count();
-      if (hasTime > 0) await timeInput.fill(pickupTime);
-    }
-
-    // Note field — write full order details
+    // Note — write full order details as fallback
     const note = `${customerName} - ${studentId} | ${cart.map((i) => `${i.name} x${i.qty}`).join(', ')}`;
-    const noteInput = page.locator('textarea, input[placeholder*="note" i], input[placeholder*="ghi" i]').first();
+    const noteInput = page.locator(
+      'textarea, input[placeholder*="ghi chú" i], input[placeholder*="note" i], input[placeholder*="ghi" i]'
+    ).first();
     const hasNote = await noteInput.count();
-    if (hasNote > 0) await noteInput.fill(note);
+    if (hasNote > 0) await noteInput.fill(note, { force: true });
 
     // ── Submit ──
     console.log('[browser] Submitting order...');
     await page.screenshot({ path: '/tmp/before-submit.png' });
 
-    const submitBtn = page.locator('button[type="submit"], button:has-text("Order"), button:has-text("Đặt"), button:has-text("Xác nhận")').first();
-    await submitBtn.click();
+    const submitBtn = page.locator(
+      'button:has-text("Xác nhận"), button:has-text("Đặt hàng"), button:has-text("Đặt"), button[type="submit"], button:has-text("Order")'
+    ).first();
+    await submitBtn.click({ force: true });
     await page.waitForTimeout(3000);
 
     // ── Extract order code ──
