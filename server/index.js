@@ -191,10 +191,13 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
     }
 
     // ── Open cart / checkout ──
-    // Dump page after adding items so we can see the mobile cart bar
+    // Dump the END of the page HTML — the cart bar is a fixed element near end of DOM
     await page.screenshot({ path: '/tmp/after-add.png' });
-    const afterAddHtml = await page.evaluate(() => document.body.innerHTML.slice(0, 5000));
-    console.log('[debug] after-add HTML:', afterAddHtml);
+    const afterAddHtml = await page.evaluate(() => {
+      const full = document.body.innerHTML;
+      return full.slice(-4000); // tail of DOM where fixed bars live
+    });
+    console.log('[debug] after-add HTML (tail):', afterAddHtml);
 
     console.log('[browser] Opening cart...');
     // On mobile iPos, a sticky bottom bar appears after adding items
