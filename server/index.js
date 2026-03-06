@@ -57,7 +57,7 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
   });
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    viewport: { width: 1280, height: 900 },
+    viewport: { width: 390, height: 844 }, // mobile-only checkout on iPos
     locale: 'vi-VN',
   });
   // Mask automation signals
@@ -106,7 +106,6 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
       const searchTerm = item.viName.replace(/\s*\([^)]*\)\s*/g, '').trim();
       console.log(`[browser] Adding: "${searchTerm}" x${item.qty}`);
 
-      await searchInput.scrollIntoViewIfNeeded();
       await searchInput.fill(searchTerm, { force: true });
       await page.waitForTimeout(1500);
       await page.screenshot({ path: `/tmp/search-${item.storeItemId || item.name}.png` });
@@ -192,13 +191,36 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
     }
 
     // ── Open cart / checkout ──
+    // Dump page after adding items so we can see the mobile cart bar
+    await page.screenshot({ path: '/tmp/after-add.png' });
+    const afterAddHtml = await page.evaluate(() => document.body.innerHTML.slice(0, 5000));
+    console.log('[debug] after-add HTML:', afterAddHtml);
+
     console.log('[browser] Opening cart...');
-    const cartBtn = page.locator('[class*="order-floating"], [class*="floating__button"]').first();
-    await cartBtn.click({ force: true });
+    // On mobile iPos, a sticky bottom bar appears after adding items
+    const cartBtn = page.locator(
+      '[class*="order-group__bottom"], [class*="btn-order"], [class*="sticky-cart"], [class*="cart-bottom"], [class*="order-bottom"], [class*="order__bottom"]'
+    ).first();
+    const cartBtnCount = await cartBtn.count();
+    if (cartBtnCount > 0) {
+      await cartBtn.click({ force: true });
+    } else {
+      // Fallback: click any visible element that has order count / price
+      await page.evaluate(() => {
+        const all = Array.from(document.querySelectorAll('[class*="order"], [class*="cart"]'));
+        for (const el of all) {
+          const r = el.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0 && r.bottom > window.innerHeight * 0.7) {
+            el.click();
+            return;
+          }
+        }
+      });
+    }
     await page.waitForTimeout(1500);
 
-    // Dump checkout form HTML to see actual field names
-    const checkoutHtml = await page.evaluate(() => document.body.innerHTML.slice(0, 4000));
+    // Dump checkout form HTML
+    const checkoutHtml = await page.evaluate(() => document.body.innerHTML.slice(0, 5000));
     console.log('[debug] checkout HTML:', checkoutHtml);
 
     // ── Fill checkout form ──
