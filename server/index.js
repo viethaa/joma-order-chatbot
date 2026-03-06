@@ -192,7 +192,40 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
           throw new Error(`Could not find add button for: ${item.name} (${item.viName})`);
         }
         console.log(`[browser] Click ${q + 1}/${item.qty} → strategy: ${added}`);
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(600);
+
+        // If a product-detail dialog opened (item has customizations), confirm it
+        const dialogConfirmed = await page.evaluate(() => {
+          const dialog = document.querySelector('.product-detail__dialog, [class*="item-buy-detail"]');
+          if (!dialog) return null;
+          const r = dialog.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) return null;
+
+          // Find the confirm/add button at bottom of dialog
+          const allBtns = Array.from(dialog.querySelectorAll('button, [role="button"], [class*="btn-add"], [class*="add-to"], [class*="confirm"], [class*="order-btn"]'));
+          for (const btn of allBtns) {
+            const txt = btn.textContent.trim().toLowerCase();
+            const cls = btn.className?.toString().toLowerCase() || '';
+            if (/thêm|xác nhận|add|order|đặt/i.test(txt) || /btn-add|add-to|confirm|order-btn/i.test(cls)) {
+              const br = btn.getBoundingClientRect();
+              if (br.width > 0 && br.height > 0) {
+                btn.click();
+                return txt || cls;
+              }
+            }
+          }
+          // Fallback: click last visible button in dialog (usually the CTA)
+          const visible = allBtns.filter(b => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+          if (visible.length > 0) {
+            visible[visible.length - 1].click();
+            return 'last-btn: ' + visible[visible.length - 1].textContent.trim().slice(0, 20);
+          }
+          return null;
+        });
+        if (dialogConfirmed !== null) {
+          console.log(`[browser] Confirmed product dialog: "${dialogConfirmed}"`);
+          await page.waitForTimeout(600);
+        }
       }
 
       // Clear search for next item
@@ -227,18 +260,19 @@ async function placeOrderOnWebsite({ cart, pickupTime, customerName, studentId }
     });
     console.log('[debug] order-group elements:', JSON.stringify(orderGroupInfo));
 
-    // Click the visible order-group element closest to bottom of screen
+    // Wait for cart bottom bar to become visible (appears after item confirmed)
+    await page.waitForSelector('.component__order-group__module', { state: 'visible', timeout: 5000 }).catch(() => {});
+
+    // Click the order-group module (mobile cart bottom bar)
     const clicked = await page.evaluate(() => {
-      const els = Array.from(document.querySelectorAll('[class*="order-group"], [class*="order__group"]'));
-      const visible = els.filter(el => {
-        const r = el.getBoundingClientRect();
-        return r.width > 0 && r.height > 0;
-      });
-      if (visible.length === 0) return false;
-      // Sort by bottom position descending (most at bottom wins)
-      visible.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom);
-      visible[0].click();
-      return visible[0].className;
+      const el = document.querySelector('.component__order-group__module');
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) { el.click(); return 'order-group__module'; }
+      // Try clicking any child cs-touch inside it
+      const touch = el.querySelector('[class*="cs-touch"], [class*="btn-order"], button');
+      if (touch) { touch.click(); return 'child:' + touch.className; }
+      return false;
     });
     console.log('[browser] Cart click result:', clicked);
     await page.waitForTimeout(1500);
