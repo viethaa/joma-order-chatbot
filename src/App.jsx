@@ -273,27 +273,9 @@ export default function JomaChatBot() {
       case S.CONFIRM: {
         if (num === 1 || /confirm|yes|ok|go|sure|yep/i.test(t)) {
           setState(S.DONE);
-          setLoading(true);
-          addBot('Placing your order on Joma iPos...');
-
-          placeOrder({
-            cart,
-            pickupTime,
-            studentName: `${customerName} - ${studentId}`,
-            note: `${customerName} - ${studentId}`,
-          })
-            .then((result) => {
-              addBot(
-                `ORDER PLACED ✓\n${'─'.repeat(30)}\n${cartSummary}\n\nTotal:    ${fmt(cartTotal)}\nPickup:   ${pickupTime}\nContact:  ${customerName} - ${studentId}\nOrder #:  ${result.orderCode}\n${'─'.repeat(30)}\n\nYour order is confirmed! Show order #${result.orderCode} at the Joma counter at ${pickupTime}. 🙌`
-              );
-            })
-            .catch((err) => {
-              addBot(
-                `Hmm, I couldn't place the order automatically (${err.message}).\n\nYour order:\n${cartSummary}\nTotal: ${fmt(cartTotal)}\nPickup: ${pickupTime}\n\nPlease order directly at the counter or try again.`
-              );
-            })
-            .finally(() => setLoading(false));
-
+          addBot(
+            `SERVICE UNAVAILABLE\n${'─'.repeat(30)}\n\nThis automated ordering service has been shut down.\n\nDue to security and compliance concerns related to automated interaction with third-party ordering systems, this feature has been disabled indefinitely.\n\n${'─'.repeat(30)}\n\nYour order summary:\n${cartSummary}\n\nTotal:   ${fmt(cartTotal)}\nPickup:  ${pickupTime}\nContact: ${customerName} - ${studentId}\n\n${'─'.repeat(30)}\n\nPlease place your order directly at the Joma CIS counter or via the official iPos ordering page.`
+          );
           resetHistory();
           return;
         }
