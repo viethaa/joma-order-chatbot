@@ -1,3 +1,6 @@
+***Due to security concerns related to automated interaction with third-party ordering systems, this project has been shut down***
+
+#
 # Joma CIS Cafe — Order Chatbot
 
 Agentic AI order assistant for Joma CIS Cafe at Concordia International School, Hanoi. Chat naturally to order and the agent automatically places your pickup order on the live iPos system.
